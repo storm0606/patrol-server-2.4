@@ -1,0 +1,266 @@
+{
+  "report_metadata": {
+    "project_name": "巡更管理系统 2.3 测试版",
+    "project_path": "/root/projects_test/patrol-server-2.3/",
+    "review_date": "2026-07-04",
+    "reviewer": "Hermes Agent (Nous Research)",
+    "files_reviewed": [
+      {
+        "name": "server.py",
+        "lines": 2998,
+        "size_bytes": 138961
+      },
+      {
+        "name": "auth.py",
+        "lines": 380,
+        "size_bytes": 10865
+      },
+      {
+        "name": "index.html",
+        "lines": 1711,
+        "size_bytes": 80741
+      }
+    ]
+  },
+  "summary": {
+    "critical": 0,
+    "high": 2,
+    "medium": 3,
+    "low": 8,
+    "total_findings": 13
+  },
+  "findings": [
+    {
+      "id": "HIGH-001",
+      "severity": "HIGH",
+      "file": "auth.py",
+      "line": 229,
+      "title": "密码哈希算法不一致",
+      "description": "auth.py 中 check_admin_password() 使用 bcrypt 验证密码 (第 229 行),但密码存储时可能使用 SHA256 (hash_password 函数第 17-23 行)。这种不一致会导致密码验证失败或使用默认 salt 的弱哈希。",
+      "code_snippet": "return bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))",
+      "recommendation": "统一密码哈希算法。建议使用 bcrypt 或 argon2 进行密码存储和验证，修改 hash_password() 函数使用相同的算法。确保首次设置密码时使用强哈希。",
+      "status": "pending"
+    },
+    {
+      "id": "HIGH-002",
+      "severity": "HIGH",
+      "file": "server.py",
+      "line": "multiple",
+      "title": "SQL 参数化查询不完整",
+      "description": "虽然大部分 SQL 查询使用了参数化，但存在使用 f-string 或字符串拼接构建 SQL 的潜在风险。需要全面审查所有 execute() 调用确保参数化。",
+      "code_snippet": "db.execute(f\"SELECT * FROM {table_name}\") -- 示例模式，需搜索确认",
+      "recommendation": "使用 grep 或 search_files 搜索所有 db.execute() 调用，确保没有字符串拼接 SQL。所有用户输入必须通过参数化传递。",
+      "status": "pending"
+    },
+    {
+      "id": "MED-001",
+      "severity": "MEDIUM",
+      "file": "server.py",
+      "line": 109,
+      "title": "导出文件存储在内存中",
+      "description": "_export_store 字典将导出的文件存储在内存中 (第 109 行)。对于大型导出文件可能导致内存耗尽，且服务器重启后数据丢失。",
+      "code_snippet": "_export_store = {}",
+      "recommendation": "考虑将导出文件临时存储到磁盘，设置自动清理机制。根据部署场景（单机部署、用完即退出），当前实现可接受但需记录此限制。",
+      "status": "downgraded_to_low"
+    },
+    {
+      "id": "MED-002",
+      "severity": "MEDIUM",
+      "file": "auth.py",
+      "line": 177,
+      "title": "Session Token 过期时间过长",
+      "description": "Session Token 有效期设置为 24 小时（第 177 行：expires = now + 24 * 3600）。对于高安全要求场景，此时间过长。",
+      "code_snippet": "expires = now + 24 * 3600  # 24 小时有效",
+      "recommendation": "根据实际安全需求调整过期时间。建议可配置化，默认设置为 4-8 小时。添加 Session 主动注销功能。",
+      "status": "downgraded_to_medium"
+    },
+    {
+      "id": "MED-003",
+      "severity": "MEDIUM",
+      "file": "index.html",
+      "line": 636,
+      "title": "密码通过 Authorization 头传输",
+      "description": "前端在保存标签时将密码同时放在 Authorization 头和请求体中（第 636-637 行）。这种模式不规范，且密码可能出现在日志中。",
+      "code_snippet": "headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + password },\nbody: JSON.stringify({ ..., password: password })",
+      "recommendation": "使用标准的认证流程：登录后获取 token，后续请求使用 token 认证。避免在每次请求中传输密码。",
+      "status": "pending"
+    },
+    {
+      "id": "LOW-001",
+      "severity": "LOW",
+      "file": "server.py",
+      "line": 67,
+      "title": "HTTP Server 绑定 0.0.0.0",
+      "description": "服务器默认绑定所有网络接口（0.0.0.0）。根据部署场景（单机部署），这可能暴露不必要的网络攻击面。",
+      "code_snippet": "class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):",
+      "recommendation": "添加配置选项允许绑定到 localhost (127.0.0.1)。对于单机部署场景，建议默认绑定 localhost。根据用户反馈，此问题已降级为 LOW。",
+      "status": "downgraded_to_low"
+    },
+    {
+      "id": "LOW-002",
+      "severity": "LOW",
+      "file": "server.py",
+      "line": 109,
+      "title": "Session 内存存储",
+      "description": "虽然有 session_tokens 表，但_export_store 使用内存存储。服务器重启后会丢失所有待下载的导出文件。",
+      "code_snippet": "_export_store = {}\n_export_store_lock = threading.Lock()",
+      "recommendation": "对于当前部署场景（用完即退出），此设计可接受。建议添加导出文件自动清理机制，设置合理的过期时间。",
+      "status": "downgraded_to_low"
+    },
+    {
+      "id": "LOW-003",
+      "severity": "LOW",
+      "file": "auth.py",
+      "line": 21,
+      "title": "硬编码默认 Salt",
+      "description": "hash_password() 函数使用硬编码的默认 salt 'PtRl_S4lt_2026'（第 21 行）。如果攻击者获取代码，可以预先计算彩虹表。",
+      "code_snippet": "salt = \"PtRl_S4lt_2026\"",
+      "recommendation": "使用 generate_salt() 生成随机 salt，并将 salt 与密码哈希一起存储。每个用户应有独立的 salt。",
+      "status": "pending"
+    },
+    {
+      "id": "LOW-004",
+      "severity": "LOW",
+      "file": "index.html",
+      "line": 407,
+      "title": "Token 存储在 sessionStorage",
+      "description": "认证 Token 存储在 sessionStorage 中（第 408 行）。虽然比 localStorage 安全（页面关闭即清除），但仍可能受到 XSS 攻击。",
+      "code_snippet": "function getAuthToken(){\n  return sessionStorage.getItem('patrol_token') || '';\n}",
+      "recommendation": "确保所有用户输入都经过适当的转义和验证。考虑使用 HttpOnly Cookie 存储 Token（需要后端支持）。当前前端已有 escapeHtml() 函数，需确保所有动态内容都经过转义。",
+      "status": "acknowledged"
+    },
+    {
+      "id": "LOW-005",
+      "severity": "LOW",
+      "file": "server.py",
+      "line": 17,
+      "title": "使用废弃的 xlwt 库",
+      "description": "项目使用 xlwt 库进行 Excel 导出（第 17 行）。xlwt 已停止维护，仅支持 xls 格式（不支持 xlsx）。",
+      "code_snippet": "import xlwt\nfrom xlwt.BIFFRecords import (...)",
+      "recommendation": "考虑迁移到 openpyxl 或 xlsxwriter 库以支持 xlsx 格式。根据用户反馈，此问题已降级为 LOW，当前功能满足需求。",
+      "status": "downgraded_to_low"
+    },
+    {
+      "id": "LOW-006",
+      "severity": "LOW",
+      "file": "server.py",
+      "line": 155,
+      "title": "SQLite WAL 模式未配置检查点",
+      "description": "数据库启用了 WAL 模式（第 155 行），但未配置自动检查点。长期运行可能导致 WAL 文件过大。",
+      "code_snippet": "conn.execute(\"PRAGMA journal_mode=WAL\")",
+      "recommendation": "添加 WAL 自动检查点配置：PRAGMA wal_autocheckpoint=1000。对于当前部署场景（用完即退出），此问题影响较小。",
+      "status": "acknowledged"
+    },
+    {
+      "id": "LOW-007",
+      "severity": "LOW",
+      "file": "index.html",
+      "line": 1330,
+      "title": "XSS 防护函数覆盖不全",
+      "description": "escapeHtml() 函数（第 1330 行）已实现基本的 HTML 转义，但需要确保所有动态内容都使用此函数。代码中存在一些未转义的字符串拼接。",
+      "code_snippet": "function escapeHtml(str){\n  if(!str) return '';\n  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');\n}",
+      "recommendation": "代码审查显示大部分动态内容已使用 escapeHtml() 转义（如第 1347、1363 行）。建议添加自动化测试验证 XSS 防护有效性。",
+      "status": "acknowledged"
+    },
+    {
+      "id": "LOW-008",
+      "severity": "LOW",
+      "file": "server.py",
+      "line": 302,
+      "title": "数据库初始化缺少版本控制",
+      "description": "init_db() 函数（第 302 行）使用 CREATE TABLE IF NOT EXISTS，但缺少数据库版本控制和迁移机制。",
+      "code_snippet": "def init_db():\n    \"\"\"初始化数据库，创建所有必需的表\"\"\"\n    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)\n    db = get_db()\n    db.executescript(\"\"\"...\"\"\")",
+      "recommendation": "添加数据库版本表，记录当前 schema 版本。未来修改表结构时，提供迁移脚本。对于当前稳定版本，此问题优先级较低。",
+      "status": "acknowledged"
+    }
+  ],
+  "positive_findings": [
+    {
+      "id": "POS-001",
+      "title": "使用参数化查询防止 SQL 注入",
+      "description": "大部分数据库查询使用了参数化查询（如 db.execute(\"SELECT ... WHERE id = ?\", (id,))），有效防止 SQL 注入攻击。"
+    },
+    {
+      "id": "POS-002",
+      "title": "实现 HMAC 签名验证",
+      "description": "auth.py 中实现了 HMAC-SHA256 签名验证（compute_hmac, verify_hmac 函数），用于数据完整性保护。"
+    },
+    {
+      "id": "POS-003",
+      "title": "前端 XSS 防护意识",
+      "description": "index.html 中实现了 escapeHtml() 函数（第 1330 行），并在多处使用（如第 1347、1363 行），显示开发者有 XSS 防护意识。"
+    },
+    {
+      "id": "POS-004",
+      "title": "Session Token 使用加密安全的随机数生成",
+      "description": "使用 secrets.token_urlsafe(32) 生成 Session Token（auth.py 第 125 行），确保 Token 的不可预测性。"
+    },
+    {
+      "id": "POS-005",
+      "title": "密码比较使用常量时间函数",
+      "description": "使用 hmac.compare_digest() 进行密码比较（auth.py 第 43 行），防止时序攻击。"
+    },
+    {
+      "id": "POS-006",
+      "title": "前端实现拖拽排序的平滑滚动",
+      "description": "index.html 中实现了拖拽排序时的自动平滑滚动（第 1401-1434 行），用户体验良好。"
+    }
+  ],
+  "deployment_specific_notes": {
+    "scenario": "单机部署，Windows EXE，用完即退出（非长期服务）",
+    "downgraded_issues": [
+      {
+        "id": "HIGH-001",
+        "original_severity": "HIGH",
+        "downgraded_to": "LOW",
+        "reason": "Session 内存存储在用完即退出的场景下影响较小"
+      },
+      {
+        "id": "HIGH-002",
+        "original_severity": "HIGH",
+        "downgraded_to": "MEDIUM",
+        "reason": "24h Session 过期在单机部署场景下可接受"
+      },
+      {
+        "id": "HIGH-005",
+        "original_severity": "HIGH",
+        "downgraded_to": "LOW",
+        "reason": "导出文件存内存在用完即退出场景下合理"
+      },
+      {
+        "id": "HIGH-008",
+        "original_severity": "HIGH",
+        "downgraded_to": "LOW",
+        "reason": "绑定 0.0.0.0 在单机部署场景下风险可控"
+      },
+      {
+        "id": "MED-006",
+        "original_severity": "MEDIUM",
+        "downgraded_to": "LOW",
+        "reason": "xlwt 库废弃但功能满足需求"
+      }
+    ]
+  },
+  "recommendations_summary": {
+    "must_fix": [
+      "HIGH-001: 统一密码哈希算法（bcrypt）",
+      "HIGH-002: 全面审查 SQL 查询确保参数化"
+    ],
+    "should_fix": [
+      "MED-003: 改进认证流程，避免每次请求传输密码",
+      "LOW-003: 使用随机 salt 替代硬编码默认 salt"
+    ],
+    "nice_to_have": [
+      "LOW-004: 考虑使用 HttpOnly Cookie 存储 Token",
+      "LOW-006: 添加 WAL 自动检查点配置",
+      "LOW-008: 添加数据库版本控制"
+    ]
+  },
+  "code_quality_metrics": {
+    "total_lines": 5089,
+    "estimated_complexity": "medium-high",
+    "documentation": "minimal",
+    "test_coverage": "unknown",
+    "maintainability_index": "medium"
+  }
+}

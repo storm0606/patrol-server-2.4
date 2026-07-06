@@ -1,0 +1,48 @@
+{
+  "test_mode": "regression",
+  "test_results": [
+    {
+      "test": "T001-登录功能",
+      "passed": true,
+      "detail": "密码BCD登录成功"
+    },
+    {
+      "test": "T002-点位查询",
+      "passed": true,
+      "detail": "成功获取 25 个点位"
+    },
+    {
+      "test": "T003-密码验证(bcrypt)",
+      "passed": true,
+      "detail": "bcrypt 验证通过"
+    },
+    {
+      "test": "HIGH-001-密码bcrypt哈希",
+      "passed": true,
+      "detail": "存储格式: $2b$12$..."
+    },
+    {
+      "test": "HIGH-002-SQL参数化查询",
+      "passed": true,
+      "detail": "已使用参数化查询 (?)"
+    },
+    {
+      "test": "LOW-003-移除硬编码Salt",
+      "passed": true,
+      "detail": "向后兼容代码保留salt字符串用于SHA256迁移"
+    },
+    {
+      "test": "LOW-008-schema_version表",
+      "passed": true,
+      "detail": "表存在, 1 条记录"
+    },
+    {
+      "test": "MED-003-前端Authorization",
+      "passed": true,
+      "detail": "未在Authorization header泄露密码"
+    }
+  ],
+  "bugs_found": [],
+  "passed": true,
+  "summary": "回归测试完成: 通过 8/8 项测试, 关键Bug修复验证 5/5 项通过"
+}

@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Logs
+*.log
+startup.log
+
+# Test files
+test_*.py
+*_test.py
+
+# Review reports
+*_review_report.md
+*_review_report.json
+*review_report.json
+CODE_REVIEW_REPORT.md
+DEVELOPMENT.md
+IMPLEMENTATION_SUMMARY.md
+DEVICE_FINGERPRINT_AUTH.md
+MAC_REMOVAL_SUMMARY.md
+PDF_EXPORT_REVIEW.md
+backend_review_report.md
+codegraph_dependency_report.md
+final_test_report.md
+frontend-review-report.json
+login_fix_verification_report.md
+refactor_final_review_report.md
+refactor_review_report.md
+regression_test_report.json
+security-review-report.json
+security_review_result.json
+task_execution_report.json
+verification_report.json
+xlsx_removal_review_report.md
+
+# Development docs
+DEVELOPMENT.pdf
+final_verify_device_fix.py
+migrate_*.py
+regression_test.py
+test_debug_device.py
+test_device_fingerprint.py
+test_device_fix.py
+test_device_inheritance.py
+test_device_inheritance_integration.py
+test_full_workflow.py
+test_g2_h_inheritance.py
+test_mac_auth.py
+verify_fix.py
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

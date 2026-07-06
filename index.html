@@ -1,0 +1,1884 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<title>巡更记录管理系统 2.4</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f7fa;color:#2d3436;min-height:100vh;-webkit-text-size-adjust:100%}
+.header{background:linear-gradient(135deg,#dfe6e9 0%,#b2bec3 100%);padding:20px;text-align:center;border-bottom:2px solid #00b894}
+.header h1{color:#00b894;font-size:1.8em;display:flex;align-items:center;justify-content:center;gap:10px}
+.header .update-info{color:#636e72;margin-top:8px;font-size:0.85em}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+.panel{background:#ffffff;border-radius:12px;padding:20px;margin-bottom:20px;border:1px solid #dfe6e9;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
+.panel h2{color:#00b894;margin-bottom:15px;font-size:1.1em;display:flex;align-items:center;gap:8px}
+.form-row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;align-items:center}
+.form-row label{min-width:80px;color:#636e72;font-size:0.9em;flex-shrink:0}
+.form-row input,.form-row select{background:#ffffff;border:1px solid #dfe6e9;color:#2d3436;padding:8px 12px;border-radius:6px;font-size:16px;appearance:none}
+.form-row input:focus,.form-row select:focus{border-color:#00b894;outline:none}
+.btn{background:#00b894;color:#ffffff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:0.9em;font-weight:bold;transition:all 0.2s}
+.btn:hover{background:#00a381}
+.btn-secondary{background:#dfe6e9;color:#636e72;font-weight:normal}
+.btn-secondary:hover{background:#b2bec3}
+.btn-export{background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:white;font-weight:normal}
+.btn-export:hover{background:linear-gradient(135deg,#5b4cdb,#8c7aee)}
+.btn-green{background:linear-gradient(135deg,#00b894,#55efc4);color:white;font-weight:normal}
+.btn-green:hover{background:linear-gradient(135deg,#00a381,#44d4b3)}
+.btn-danger{background:linear-gradient(135deg,#e17055,#ff7675);color:white;font-weight:normal}
+.btn-danger:hover{background:linear-gradient(135deg,#d63031,#ee5a5a)}
+.tab-bar{display:flex;gap:4px;margin-bottom:20px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+.tab-btn{padding:10px 18px;border-radius:8px 8px 0 0;cursor:pointer;border:1px solid #2a2a4a;border-bottom:none;background:#0f0f1a;color:#aaa;font-size:0.9em;white-space:nowrap;transition:all 0.2s}
+.tab-btn.active{background:#1a1a2e;color:#00cec9;border-color:#00cec9}
+.tab-btn:hover{color:#00cec9}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,206,201,0.95);color:#0a0a1a;padding:16px 28px;border-radius:10px;z-index:10000;display:none;max-width:400px;font-weight:bold;font-size:1.1em;box-shadow:0 8px 32px rgba(0,0,0,0.5);text-align:center;opacity:0;transition:opacity 0.3s ease}.toast.show{opacity:1}
+.point-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:10px}
+.point-card{background:#0f0f1a;border:1px solid #2a2a4a;border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center;transition:all 0.2s;cursor:pointer}
+.point-card:hover{border-color:#00cec9}
+.point-card.active{border-color:#00b894;background:#e8f8f5}
+.point-card .name{font-size:0.9em;color:#e0e0e0}
+.point-card.inactive{opacity:0.4}
+/* 点位表格视图 */
+.points-table-wrap{overflow-x:auto;margin-top:12px}
+.points-table{width:100%;border-collapse:collapse;font-size:0.9em}
+.points-table th{background:#dfe6e9;color:#00b894;padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid #b2bec3}
+.points-table td{padding:10px 12px;border-bottom:1px solid #dfe6e9;vertical-align:middle}
+.points-table tr:hover{background:#f5f7fa}
+.points-table .col-id{width:50px;color:#636e72;font-size:0.85em}
+.points-table .col-name{font-weight:500;color:#2d3436}
+.points-table .col-tag{font-family:monospace;background:#f0f0f0;padding:4px 10px;border-radius:4px;font-size:0.85em;color:#2d3436;white-space:nowrap}
+.points-table .col-tag.empty{background:#fafafa;color:#999;font-style:italic}
+.points-table .col-actions{white-space:nowrap}
+.points-table .btn-mini{padding:4px 10px;font-size:0.8em;margin-right:4px;border-radius:4px;cursor:pointer;border:none;font-weight:500}
+.points-table .btn-edit{background:#00cec9;color:#0a0a1a}
+.points-table .btn-edit:hover{background:#00b894}
+.points-table .btn-clear{background:#dfe6e9;color:#636e72}
+.points-table .btn-clear:hover{background:#e17055;color:#fff}
+.points-table .status-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:0.75em;font-weight:500}
+.points-table .status-on{background:#e8f8f5;color:#00b894}
+.points-table .status-off{background:#fdf2f0;color:#e17055}
+/* 视图切换 */
+.view-toggle{display:flex;gap:8px;margin-bottom:12px}
+.view-toggle-btn{padding:6px 14px;border-radius:6px;cursor:pointer;border:1px solid #dfe6e9;background:#fff;color:#636e72;font-size:0.85em;transition:all 0.2s}
+.view-toggle-btn:hover{border-color:#00b894;color:#00b894}
+.view-toggle-btn.active{background:#00b894;color:#fff;border-color:#00b894}
+/* 标签编辑弹窗 */
+.label-edit-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:none;align-items:center;justify-content:center}
+.label-edit-modal.show{display:flex}
+.label-edit-box{background:#fff;border-radius:12px;padding:24px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+.label-edit-title{font-size:1.1em;color:#00b894;margin-bottom:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+.label-edit-row{display:flex;gap:12px;margin-bottom:12px;align-items:center}
+.label-edit-row label{min-width:70px;color:#636e72;font-size:0.9em}
+.label-edit-row input{flex:1;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;font-size:0.95em}
+.label-edit-row input:focus{border-color:#00b894;outline:none}
+.label-edit-section{background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:12px}
+.label-edit-section-title{font-size:0.85em;color:#636e72;margin-bottom:8px;font-weight:500}
+.label-edit-preview{background:#00b894;color:#fff;padding:10px 14px;border-radius:6px;font-family:monospace;font-size:1em;text-align:center;margin:16px 0}
+.label-edit-preview.empty{background:#dfe6e9;color:#636e72}
+.label-edit-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.timeline{margin-top:14px}
+.timeline-item{display:flex;gap:12px;margin-bottom:8px;padding:8px;background:#f5f7fa;border-radius:6px;border-left:3px solid #00b894}
+.timeline-item .time{color:#00b894;font-weight:bold;min-width:100px;font-size:0.85em;flex-shrink:0}
+.timeline-item .points{color:#636e72;font-size:0.85em}
+/* removed .gen-preview - generate module deleted */
+.upload-zone{border:2px dashed #dfe6e9;border-radius:12px;padding:30px;text-align:center;cursor:pointer;transition:all 0.3s;background:#fafafa}
+.upload-zone:hover,.upload-zone.dragover{border-color:#00b894;background:#e8f8f5}
+.upload-zone p{color:#636e72;margin:8px 0}
+.upload-zone .icon{font-size:2.5em;color:#00b894}
+.round-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;margin-top:10px}
+.round-card{background:#f5f7fa;border:1px solid #dfe6e9;border-radius:8px;padding:12px 14px}
+.round-card .rtitle{color:#00b894;font-weight:bold;font-size:0.95em;margin-bottom:6px}
+.round-card .rinfo{color:#636e72;font-size:0.85em}
+.round-card .rinfo .cnt{color:#00b894;font-weight:bold}
+.round-card .rinfo .added{color:#f5a623;font-weight:bold}
+.record-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:0.85em}
+.record-table th{background:#dfe6e9;color:#00b894;padding:6px 8px;text-align:center;position:sticky;top:0}
+.record-table td{padding:5px 8px;text-align:center;border-bottom:1px solid #dfe6e9}
+.record-table tr:hover{background:#f5f7fa}
+.record-table tr.added-row{background:rgba(0,184,148,0.08);border-left:3px solid #00b894}
+.step-badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#00b894;color:#fff;font-size:0.75em;font-weight:bold;margin-right:8px;flex-shrink:0}
+.flow-divider{height:1px;background:linear-gradient(90deg,transparent,#dfe6e9,#00b894,#dfe6e9,transparent);margin:16px 0}
+@media(max-width:768px){
+  .form-row{flex-direction:column;align-items:stretch}
+  .form-row input,.form-row select{width:100%}
+  .form-row label{min-width:auto}
+  .container{padding:10px}
+  .header h1{font-size:1.3em}
+  .tab-btn{padding:8px 12px;font-size:0.8em}
+  .point-grid{grid-template-columns:1fr 1fr}
+  .round-grid{grid-template-columns:1fr 1fr}
+}
+/* 诊断 & 补充报告 */
+.qe-round-tabs{display:flex;flex-wrap:wrap;gap:6px}
+.qe-round-tab{padding:4px 12px;border-radius:16px;font-size:0.8em;cursor:pointer;border:1px solid #444;background:#2a2a3a;color:#aaa;transition:all .2s}
+.qe-round-tab:hover{border-color:#fdcb6e;color:#2d3436}
+.qe-round-tab.active{background:#fdcb6e;color:#2d3436;border-color:#fdcb6e;font-weight:bold}
+.qe-round-tab.tab-ok{background:#e8f5e9;border-color:#22c55e;color:#16a34a}
+.qe-round-tab.tab-ok.active{background:#22c55e;color:#fff;border-color:#22c55e}
+.qe-round-tab.tab-warn{background:#ffebee;border-color:#e74c3c;color:#c0392b}
+.qe-round-tab.tab-warn.active{background:#e74c3c;color:#fff;border-color:#e74c3c}
+.qe-round-tab.tab-empty{border-color:#b2bec3;color:#636e72}
+.qe-round-tab.tab-empty.active{background:#636e72;color:#fff}
+.qe-round-tab.tab-supplement{border-color:#00b894;color:#00b894}
+.qe-round-tab.tab-supplement.active{background:#00b894;color:#fff}
+.qe-point-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px}
+.qe-point-card{padding:8px 10px;border-radius:8px;background:#f5f7fa;border:1px solid #dfe6e9;font-size:0.85em;display:flex;justify-content:space-between;align-items:center}
+.qe-point-card.ok{border-color:#00b894;background:#e8f8f5}
+.qe-point-card.ok-qualified{border-color:#00b894;background:#e8f8f5;border-width:2px}
+.qe-point-card.warn{border-color:#e17055;background:#fdf2f0}
+.qe-point-card.missing{border-color:#b2bec3;opacity:0.6}
+.qe-point-name{color:#2d3436}
+.qe-point-count{font-weight:bold}
+.qe-point-count.red{color:#e17055}
+.qe-point-count.green{color:#00b894}
+.qe-point-count.gray{color:#636e72}
+.qe-supplement-item{padding:6px 12px;border-radius:8px;margin:4px 0;display:flex;align-items:center;gap:8px;font-size:0.85em}
+.qe-supplement-item.new{background:rgba(0,184,148,0.1);border-left:3px solid #00b894}
+.qe-supplement-item.kept{background:rgba(253,203,110,0.1);border-left:3px solid #fdcb6e}
+.qe-supplement-item.removed{background:rgba(225,112,85,0.1);border-left:3px solid #e17055}
+.qe-stat-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.qe-stat-box{flex:1;min-width:100px;padding:12px;border-radius:10px;background:#f5f7fa;border:1px solid #dfe6e9;text-align:center}
+.qe-stat-num{font-size:1.8em;font-weight:bold;line-height:1.2}
+.qe-stat-label{font-size:0.75em;color:#888;margin-top:4px}
+.qe-health-bar{height:8px;border-radius:4px;background:#2a2a3a;overflow:hidden;margin:6px 0}
+.qe-health-fill{height:100%;border-radius:4px;transition:width .5s}
+</style>
+</head>
+<body>
+<!-- 登录遮罩 -->
+<div id="login-overlay" style="display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:#0a0a1a;z-index:9999;justify-content:center;align-items:center">
+  <div style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:16px;padding:40px;text-align:center;max-width:360px;width:90%">
+    <div style="font-size:3em;margin-bottom:16px">🔒</div>
+    <h2 style="color:#00cec9;margin-bottom:24px">巡更记录管理系统 2.4</h2>
+    <input type="password" id="login-pwd" placeholder="请输入密码" style="width:100%;padding:12px 16px;border-radius:8px;border:1px solid #2a2a4a;background:#0f0f1a;color:#e0e0e0;font-size:16px;margin-bottom:12px;outline:none" onkeydown="if(event.key==='Enter')doLogin()">
+    <div id="login-error" style="color:#e17055;font-size:0.85em;margin-bottom:12px;min-height:20px"></div>
+    <button onclick="doLogin()" style="width:100%;padding:12px;border-radius:8px;border:none;background:#00cec9;color:#0a0a1a;font-size:16px;font-weight:bold;cursor:pointer">登 录</button>
+    <div style="margin-top:12px"><a href="javascript:void(0)" onclick="showResetPassword()" style="color:#00cec9;font-size:0.85em;text-decoration:none">🔑 忘记密码？使用重置密钥</a></div>
+  </div>
+</div>
+<!-- 设备未授权对话框 -->
+<div id="auth-unauthorized-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10001;justify-content:center;align-items:center">
+  <div style="background:#1a1a2e;border:1px solid #e17055;border-radius:16px;padding:40px;text-align:center;max-width:400px;width:90%">
+    <div style="font-size:3em;margin-bottom:16px">🚫</div>
+    <h2 style="color:#e17055;margin-bottom:12px">未授权用户，请购买授权</h2>
+    <p style="color:#b2bec3;font-size:0.9em;margin-bottom:24px;line-height:1.6">当前设备未获得使用授权。请联系管理员获取授权密钥。</p>
+    <div style="display:flex;gap:12px;justify-content:center">
+      <button onclick="authAbandon()" style="flex:1;padding:12px 20px;border-radius:8px;border:none;background:#636e72;color:#fff;font-size:14px;cursor:pointer">放弃</button>
+      <button onclick="authShow2FA()" style="flex:1;padding:12px 20px;border-radius:8px;border:none;background:#00cec9;color:#0a0a1a;font-size:14px;font-weight:bold;cursor:pointer">购买授权</button>
+    </div>
+  </div>
+</div>
+<!-- 2FA 输入对话框 -->
+<div id="auth-2fa-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10002;justify-content:center;align-items:center">
+  <div style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:16px;padding:40px;text-align:center;max-width:450px;width:90%">
+    <div style="font-size:3em;margin-bottom:16px">🔑</div>
+    <h2 style="color:#00cec9;margin-bottom:8px">配置 Authenticator</h2>
+    <p style="color:#b2bec3;font-size:0.85em;margin-bottom:16px">请使用 Authenticator 应用扫描二维码或手动输入密钥：</p>
+    
+    <!-- 二维码区域 -->
+    <div id="auth-qr-container" style="background:#fff;padding:16px;border-radius:12px;display:inline-block;margin-bottom:16px">
+      <div id="auth-qrcode"></div>
+    </div>
+    
+    <!-- 密钥显示区域 -->
+    <div style="background:#0f0f1a;border:1px solid #2a2a4a;border-radius:8px;padding:12px;margin-bottom:16px">
+      <div style="color:#888;font-size:0.8em;margin-bottom:6px">密钥 (Key):</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="auth-secret-key" readonly style="flex:1;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#00cec9;font-size:14px;font-family:monospace;letter-spacing:2px;text-align:center" value="加载中...">
+        <button onclick="authCopySecret()" style="background:#00cec9;color:#0a0a1a;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-size:13px;font-weight:bold">复制</button>
+      </div>
+    </div>
+    
+    <div style="color:#fdcb6e;font-size:0.8em;margin-bottom:16px">⏱ 密钥有效期：30 秒</div>
+    
+    <div style="border-top:1px solid #2a2a4a;padding-top:16px;margin-top:16px">
+      <p style="color:#888;font-size:0.85em;margin-bottom:12px">配置完成后，输入 6 位动态密钥激活：</p>
+      <input type="text" id="auth-2fa-code" maxlength="6" placeholder="000000" style="width:100%;padding:14px 16px;border-radius:8px;border:1px solid #2a2a4a;background:#0f0f1a;color:#00cec9;font-size:24px;text-align:center;letter-spacing:8px;font-weight:bold;outline:none;font-family:monospace" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)" onkeydown="if(event.key==='Enter')authActivate()">
+      <div id="auth-2fa-error" style="color:#e17055;font-size:0.85em;margin-top:12px;min-height:20px"></div>
+    </div>
+    
+    <div style="display:flex;gap:12px;justify-content:center;margin-top:16px">
+      <button onclick="authCancel2FA()" style="flex:1;padding:12px 20px;border-radius:8px;border:none;background:#636e72;color:#fff;font-size:14px;cursor:pointer">取消</button>
+      <button onclick="authActivate()" style="flex:1;padding:12px 20px;border-radius:8px;border:none;background:#00cec9;color:#0a0a1a;font-size:14px;font-weight:bold;cursor:pointer">激活授权</button>
+    </div>
+  </div>
+</div>
+<!-- 激活成功对话框 -->
+<div id="auth-success-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10003;justify-content:center;align-items:center">
+  <div style="background:#1a1a2e;border:1px solid #00b894;border-radius:16px;padding:40px;text-align:center;max-width:400px;width:90%">
+    <div style="font-size:3em;margin-bottom:16px">✅</div>
+    <h2 style="color:#00b894;margin-bottom:12px">授权激活成功</h2>
+    <p style="color:#dfe6e9;font-size:0.9em;margin-bottom:8px;line-height:1.6">您的设备已授权，可以正常使用系统。</p>
+    <p style="color:#636e72;font-size:0.8em;margin-bottom:24px" id="auth-activated-time"></p>
+    <button onclick="authSuccessOk()" style="width:100%;padding:12px 20px;border-radius:8px;border:none;background:#00b894;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">确定</button>
+  </div>
+</div>
+<!-- 重置密码对话框 -->
+<div id="reset-pwd-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#0a0a1a;z-index:10000;justify-content:center;align-items:center">
+  <div style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:16px;padding:40px;text-align:center;max-width:380px;width:90%">
+    <div style="font-size:3em;margin-bottom:16px">🔑</div>
+    <h2 style="color:#fdcb6e;margin-bottom:8px">重置密码</h2>
+    <p style="color:#636e72;font-size:0.85em;margin-bottom:20px">使用重置密钥设置新密码</p>
+    <input type="password" id="reset-key" placeholder="请输入重置密钥" style="width:100%;padding:12px 16px;border-radius:8px;border:1px solid #2a2a4a;background:#0f0f1a;color:#e0e0e0;font-size:16px;margin-bottom:12px;outline:none">
+    <input type="password" id="reset-new-pwd" placeholder="请输入新密码" style="width:100%;padding:12px 16px;border-radius:8px;border:1px solid #2a2a4a;background:#0f0f1a;color:#e0e0e0;font-size:16px;margin-bottom:12px;outline:none" onkeydown="if(event.key==='Enter')doResetPassword()">
+    <input type="password" id="reset-confirm-pwd" placeholder="请确认新密码" style="width:100%;padding:12px 16px;border-radius:8px;border:1px solid #2a2a4a;background:#0f0f1a;color:#e0e0e0;font-size:16px;margin-bottom:12px;outline:none" onkeydown="if(event.key==='Enter')doResetPassword()">
+    <div id="reset-error" style="color:#e17055;font-size:0.85em;margin-bottom:12px;min-height:20px"></div>
+    <div style="display:flex;gap:10px">
+      <button onclick="closeResetPassword()" style="flex:1;padding:12px;border-radius:8px;border:none;background:#636e72;color:#fff;font-size:14px;cursor:pointer">取消</button>
+      <button onclick="doResetPassword()" style="flex:1;padding:12px;border-radius:8px;border:none;background:#fdcb6e;color:#0a0a1a;font-size:14px;font-weight:bold;cursor:pointer">重置密码</button>
+    </div>
+  </div>
+</div>
+<div class="header">
+  <h1>🛡️ 巡更记录管理系统 2.4</h1>
+  <div class="update-info" id="update-info">代码更新：加载中...</div>
+</div>
+<div class="container" id="main-content">
+    <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('quick-edit')">🔧 一键修改</button>
+    <button class="tab-btn" onclick="switchTab('points')">📍 点位</button>
+    <button class="tab-btn" onclick="switchTab('routes')">🛤️ 动线</button>
+  </div>
+
+  <!-- 🔧 一键修改 -->
+  <div class="tab-content active" id="tab-quick-edit">
+    <div class="panel" style="border-color:#fdcb6e">
+      <h2>🔧 一键修改巡更记录</h2>
+      <p style="color:#888;font-size:0.85em;margin-bottom:12px">上传XLS文件,快速批量修改巡更数据</p>
+
+      <div class="upload-zone" id="qe-upload-zone" onclick="document.getElementById('qe-file-input').click()">
+        <div class="icon">📂</div>
+        <p>点击或拖拽上传 .xls 文件</p>
+        <p style="font-size:0.8em;color:#555">支持模板格式 XLS</p>
+      </div>
+      <input type="file" id="qe-file-input" accept=".xls" style="display:none" onchange="qeHandleUpload(this)">
+      <div id="qe-upload-status" style="margin-top:10px;color:#888;font-size:0.85em"></div>
+
+      <div id="qe-status" style="margin-top:8px;color:#888;font-size:0.85em"></div>
+    </div>
+
+    <!-- 原数据诊断 -->
+    <div class="panel" id="qe-diagnose-panel" style="display:none;border-color:#e17055">
+      <h2>🔍 原数据诊断 <span id="qe-diagnose-score" style="font-size:0.7em;vertical-align:middle"></span></h2>
+      <div id="qe-diagnose-summary" style="margin-bottom:12px"></div>
+      <div class="qe-round-tabs" id="qe-diagnose-tabs"></div>
+      <div id="qe-diagnose-detail" style="margin-top:10px"></div>
+    </div>
+
+    <!-- 补充报告 -->
+    <div class="panel" id="qe-supplement-panel" style="display:none;border-color:#00b894">
+      <h2>✨ 补充报告 <span id="qe-supplement-badge" style="font-size:0.7em;vertical-align:middle"></span></h2>
+      <div id="qe-supplement-summary" style="margin-bottom:12px"></div>
+      <div class="qe-round-tabs" id="qe-supplement-tabs"></div>
+      <div id="qe-supplement-detail" style="margin-top:10px"></div>
+    </div>
+
+    <div class="flow-divider" id="qe-divider1" style="display:none"></div>
+
+    <div class="panel" id="qe-save-panel" style="display:none;border-color:#fdcb6e">
+      <h2><span class="step-badge">💾</span>导出</h2>
+      <div id="qe-save-info" style="color:#aaa;font-size:0.85em;margin-bottom:10px"></div>
+      <div class="form-row" style="gap:10px;flex-wrap:wrap;align-items:flex-start;">
+        <button class="btn btn-export" onclick="qeExport('xls')" style="flex-shrink:0;min-width:120px;">📥 导出 XLS</button>
+        <button class="btn btn-export" onclick="qeExportAsPdf()" style="flex-shrink:0;min-width:120px;background:linear-gradient(135deg,#d63031,#e17055) !important;">📄 导出 PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📍 点位 -->
+  <div class="tab-content" id="tab-points">
+    <div class="panel">
+      <h2>📍 巡更点位管理</h2>
+      <p style="color:#888;font-size:0.85em;margin-bottom:12px">共 <span id="point-count">0</span> 个巡更点,点击可切换启用/停用,🗑️删除需密码</p>
+      <div class="form-row"><label>新增点位:</label><input type="text" id="new-point-name" placeholder="巡更点名称" style="flex:1"><button class="btn" onclick="addPoint()">➕ 添加</button></div>
+      <!-- 视图切换和表格 -->
+      <div class="view-toggle">
+        <button class="view-toggle-btn active" id="view-card-btn" onclick="switchPointView('card')">📇 卡片视图</button>
+        <button class="view-toggle-btn" id="view-table-btn" onclick="switchPointView('table')">📋 表格视图</button>
+      </div>
+      <div class="point-grid" id="point-grid"></div>
+      <div class="points-table-wrap" id="points-table-wrap" style="display:none">
+        <table class="points-table" id="points-table">
+          <thead><tr><th>ID</th><th>点位名称</th><th>标签</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="points-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- 标签编辑弹窗 -->
+    <div id="label-edit-modal" class="label-edit-modal">
+      <div class="label-edit-box">
+        <div class="label-edit-title">🏷️ 编辑点位标签</div>
+        <div style="color:#636e72;margin-bottom:16px;font-size:0.9em">点位: <span id="label-edit-point-name" style="font-weight:600;color:#2d3436"></span></div>
+        <div class="label-edit-section">
+          <div class="label-edit-section-title">一级标签</div>
+          <div class="label-edit-row"><label>标签名:</label><input type="text" id="label-l1-name" placeholder="如: A 端"></div>
+          <div class="label-edit-row"><label>序号:</label><input type="number" id="label-l1-order" placeholder="如: 1" min="1"></div>
+        </div>
+        <div class="label-edit-section">
+          <div class="label-edit-section-title">二级标签</div>
+          <div class="label-edit-row"><label>标签名:</label><input type="text" id="label-l2-name" placeholder="如: C 口"></div>
+          <div class="label-edit-row"><label>序号:</label><input type="number" id="label-l2-order" placeholder="如: 2" min="1"></div>
+        </div>
+        <div class="label-edit-preview" id="label-preview">标签预览</div>
+        <div class="label-edit-actions">
+          <button class="btn btn-secondary" onclick="closeLabelEditModal()">取消</button>
+          <button class="btn" onclick="saveLabelEdit()">💾 保存</button>
+        </div>
+      </div>
+    </div>
+    <!-- 标签清除确认弹窗 -->
+    <div id="label-clear-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:12px;padding:24px;max-width:360px;width:90%;text-align:center">
+        <div style="font-size:2em;margin-bottom:8px">🗑️</div>
+        <div style="color:#2d3436;margin-bottom:16px">确定清除 <b id="label-clear-point-name"></b> 的标签吗?</div>
+        <div style="display:flex;gap:10px;justify-content:center">
+          <button class="btn" style="background:#636e72" onclick="closeLabelClearModal()">取消</button>
+          <button class="btn" style="background:#e17055" onclick="confirmClearLabel()">✓ 确认清除</button>
+        </div>
+      </div>
+    </div>
+    <!-- 标签操作密码验证弹窗 -->
+    <div id="label-auth-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:12px;padding:24px;max-width:400px;width:90%;text-align:center">
+        <div style="font-size:2em;margin-bottom:8px">🔐</div>
+        <div style="color:#2d3436;margin-bottom:8px;font-weight:600">身份验证</div>
+        <div style="color:#636e72;margin-bottom:16px;font-size:0.9em">修改点位标签需要密码验证</div>
+        <input type="password" id="label-auth-password" placeholder="请输入密码" style="width:100%;padding:12px;border-radius:6px;border:1px solid #dfe6e9;font-size:1em;margin-bottom:16px" onkeypress="if(event.key==='Enter')confirmLabelAuth()" />
+        <div style="display:flex;gap:10px;justify-content:center">
+          <button class="btn" style="background:#636e72" onclick="closeLabelAuthModal()">取消</button>
+          <button class="btn" onclick="confirmLabelAuth()">✓ 确定</button>
+        </div>
+      </div>
+    </div>
+    <!-- 删除确认弹窗 -->
+    <div id="point-del-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#1a1a2e;border:1px solid #e17055;border-radius:12px;padding:24px;max-width:360px;width:90%;text-align:center">
+        <div style="font-size:2em;margin-bottom:8px">⚠️</div>
+        <div style="color:#e0e0e0;margin-bottom:16px">确定删除 <b id="point-del-name"></b> ?</div>
+        <div style="margin-bottom:16px"><input type="password" id="point-del-pwd" placeholder="输入管理密码" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid #444;background:#0f0f1a;color:#e0e0e0;font-size:1em"></div>
+        <div style="display:flex;gap:10px;justify-content:center">
+          <button class="btn" style="background:#636e72" onclick="closePointDelModal()">取消</button>
+          <button class="btn" style="background:#e17055" onclick="confirmDeletePoint()">🗑️ 确认删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🛤️ 动线管理 -->
+  <div class="tab-content" id="tab-routes">
+    <div class="panel" style="border-color:#fdcb6e">
+      <h2>🛤️ 巡更动线排序管理</h2>
+      <p style="color:#888;font-size:0.85em;margin-bottom:16px">自定义巡更动线的点位打点顺序,所有点位都会包含在动线中</p>
+
+      <!-- 动线选择 -->
+      <div class="form-row" style="margin-bottom:16px;padding:16px;background:#f8f9fa;border-radius:8px">
+        <label>选择动线:</label>
+        <select id="route-select" style="flex:1;min-width:200px" onchange="loadRoutePoints()">
+          <option value="">-- 选择动线 --</option>
+        </select>
+        <button class="btn btn-green" onclick="showNewRouteModal()" style="margin-left:16px">➕ 新增动线</button>
+      </div>
+
+      <!-- 点位排序区 -->
+      <div id="route-sort-container" style="display:none">
+        <div class="form-row" style="margin-bottom:12px">
+          <label>动线名称:</label>
+          <input type="text" id="edit-route-name" style="flex:1" readonly>
+          <button class="btn" onclick="saveRouteOrder()" style="margin-left:16px">💾 保存顺序</button>
+        </div>
+        <p style="color:#636e72;font-size:0.85em;margin-bottom:12px">点击点位,使用上下按钮调整顺序:</p>
+        <div id="route-points-list" class="route-points-list"></div>
+      </div>
+
+      <!-- 动线列表 -->
+      <div id="route-list-container" style="margin-top:24px">
+        <h3 style="font-size:16px;margin-bottom:12px;color:#636e72">已创建的动线</h3>
+        <div id="route-list" class="route-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增动线弹窗 -->
+  <div id="route-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:24px;max-width:500px;width:90%">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid #dfe6e9;padding-bottom:12px">
+        <h3 id="route-modal-title" style="font-size:18px;color:#00b894;margin:0">新增动线</h3>
+        <button onclick="closeRouteModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#aaa">&times;</button>
+      </div>
+      <div class="form-row" style="margin-bottom:16px">
+        <label>动线名称:</label>
+        <input type="text" id="modal-route-name" placeholder="如:线路 2、夜班动线" style="flex:1">
+      </div>
+      <div class="form-row" style="margin-bottom:16px">
+        <label>动线说明:</label>
+        <input type="text" id="modal-route-desc" placeholder="动线描述" style="flex:2">
+      </div>
+      <p style="color:#888;font-size:0.85em;margin-bottom:16px">新动线将包含所有 25 个点位,保存后可调整点位顺序</p>
+      <div class="form-row" style="justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeRouteModal()">取消</button>
+        <button class="btn btn-green" id="route-save-btn" onclick="saveRoute()">💾 保存动线</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .route-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+    .route-card{background:#fff;border:1px solid #dfe6e9;border-radius:8px;padding:16px;transition:all 0.2s}
+    .route-card:hover{border-color:#00b894;box-shadow:0 2px 8px rgba(0,184,148,0.1)}
+    .route-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:8px}
+    .route-card-title{font-weight:bold;color:#2d3436;font-size:1em}
+    .route-card-desc{color:#636e72;font-size:0.85em;margin-bottom:8px}
+    .route-card-points{color:#00b894;font-size:0.85em;margin-bottom:12px}
+    .route-card-actions{display:flex;gap:8px}
+    .route-card-actions .btn{padding:6px 12px;font-size:0.85em}
+    .point-card.active{border-color:#00b894;background:#e8f8f5}
+    .route-points-list{display:flex;flex-direction:column;gap:8px;max-height:600px;overflow-y:auto;padding:8px}
+    .route-point-item{display:flex;align-items:center;gap:12px;padding:12px;background:#f8f9fa;border:1px solid #dfe6e9;border-radius:8px;cursor:grab;transition:all 0.2s;user-select:none}
+    .route-point-item:hover{border-color:#00b894;background:#e8f8f5}
+    .route-point-item.selected{border-color:#00b894;background:#d4edda;box-shadow:0 2px 8px rgba(0,184,148,0.2)}
+    .route-point-item.dragging{opacity:0.5;border:2px dashed #00b894;background:#fff;cursor:grabbing}
+    .route-point-item.drag-over{border-top:3px solid #00b894}
+    .route-point-order{width:32px;height:32px;background:#00b894;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:0.9em;flex-shrink:0}
+    .route-point-item.selected .route-point-order{background:#00916e}
+    .route-point-name{flex:1;font-size:0.95em;color:#2d3436}
+    .route-point-tag{font-family:monospace;background:#f0f0f0;padding:2px 8px;border-radius:4px;font-size:0.8em;color:#2d3436;margin-left:8px;white-space:nowrap}
+    .route-point-tag.empty{background:#fafafa;color:#999;font-style:italic}
+    .route-point-actions{display:flex;gap:6px;flex-shrink:0}
+    .route-point-actions .btn{padding:4px 10px;font-size:0.8em}
+    .route-point-actions button:disabled{opacity:0.4;cursor:not-allowed}
+    .drag-handle{cursor:grab;color:#00b894;font-size:1.4em;margin-right:10px;user-select:none;line-height:1;opacity:0.6;transition:all 0.2s}
+    .drag-handle:hover{color:#00916e;opacity:1;transform:scale(1.1)}
+    .route-point-item:hover .drag-handle{opacity:1}
+  </style>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== 鉴权函数 =====
+function getAuthToken(){
+  return sessionStorage.getItem('patrol_token') || '';
+}
+
+function authFetch(url, options={}){
+  const token = getAuthToken();
+  const headers = {...(options.headers||{})};
+  if(token) headers['X-Auth-Token'] = token;
+  return fetch(url, {...options, headers});
+}
+
+// 轮次定义 - 与后端 ROUND_TIME_RANGES 保持一致(12轮制)
+const ROUND_TIME_RANGES={1:[0,3],2:[3,5],3:[5,7],4:[7,9],5:[9,11],6:[11,13],7:[13,15],8:[15,17],9:[17,19],10:[19,21],11:[21,23],12:[23,24]};
+const ROUND_LABELS={};
+for(let r=1;r<=12;r++){const [s,e]=ROUND_TIME_RANGES[r];ROUND_LABELS[r]='第'+r+'轮 ('+s+':00-'+e+':00)';}
+const TOTAL_ROUNDS=12;
+
+// 兼容旧代码引用
+const ROUND_HOURS={};
+for(let r=1;r<=12;r++) ROUND_HOURS[r]=ROUND_TIME_RANGES[r][0];
+
+function timeToRound(timeStr){
+  try{
+    let h=parseInt(timeStr.split(' ')[1].split(':')[0]);
+    for(let rnd=1;rnd<=TOTAL_ROUNDS;rnd++){
+      const [start,end]=ROUND_TIME_RANGES[rnd];
+      if(start<=h&&h<end) return rnd;
+    }
+    return TOTAL_ROUNDS; // 24点归入最后一轮
+  }catch(e){
+    return TOTAL_ROUNDS; // 出错时默认最后一轮
+  }
+}
+
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.textContent.includes({'quick-edit':'一键修改',points:'点位',routes:'动线'}[name])));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='points')loadPoints();
+  if(name==='quick-edit')qeLoadAllPoints();
+  if(name==='routes'){loadRouteSelect();loadRoutes();}
+}
+
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';requestAnimationFrame(()=>{t.classList.add('show')});clearTimeout(t._hideTimer);t._hideTimer=setTimeout(()=>{t.classList.remove('show');setTimeout(()=>{t.style.display='none'},300)},3000)}
+
+// ===== 点位 =====
+let _delPointId=null;
+let _delPointName='';
+
+async function loadPoints(){
+  try{const resp=await authFetch('/api/points');const pts=await resp.json();
+  document.getElementById('point-count').textContent=pts.length;
+  document.getElementById('point-grid').innerHTML=pts.map(p=>
+    '<div class="point-card'+(p.is_active?'':' inactive')+'"><span class="name" onclick="togglePoint('+p.id+')" style="cursor:pointer;flex:1">'+p.name+' <span style="color:#666;font-size:0.75em">#'+p.sort_order+'</span></span><span style="display:flex;align-items:center;gap:8px"><span style="font-size:0.8em;color:'+(p.is_active?'#5ce75c':'#e94560')+';cursor:pointer" onclick="togglePoint('+p.id+')">'+(p.is_active?'✓':'✗')+'</span><span style="cursor:pointer;font-size:1em;color:#e17055" onclick="openPointDelModal('+p.id+',\''+p.name.replace(/'/g,"\\'")+'\')">🗑️</span></span></div>'
+  ).join('');
+  // 同步更新表格视图
+  loadPointsTable(pts);
+  }catch(e){}
+}
+
+function openPointDelModal(id,name){
+  _delPointId=id;_delPointName=name;
+  document.getElementById('point-del-name').textContent=name;
+  document.getElementById('point-del-pwd').value='';
+  const m=document.getElementById('point-del-modal');m.style.display='flex';
+}
+
+function closePointDelModal(){
+  document.getElementById('point-del-modal').style.display='none';
+  _delPointId=null;
+}
+
+async function confirmDeletePoint(){
+  const pwd=document.getElementById('point-del-pwd').value;
+  if(!pwd){showToast('请输入密码');return}
+  try{
+    const resp=await authFetch('/api/points/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:_delPointId,pwd:pwd})});
+    const data=await resp.json();
+    if(data.ok){closePointDelModal();loadPoints();showToast('✓ 已删除 '+_delPointName)}
+    else{showToast('✗ '+(data.error||'删除失败'))}
+  }catch(e){showToast('✗ 删除失败')}
+}
+
+async function togglePoint(id){
+  const pwd=prompt('请输入管理密码');
+  if(!pwd)return;
+  try{const resp=await authFetch('/api/points/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,pwd:pwd})});
+  const data=await resp.json();if(data.ok){loadPoints()}else{showToast('✗ '+(data.error||'操作失败'))}}catch(e){showToast('✗ 操作失败')}
+}
+
+async function addPoint(){
+  const name=document.getElementById('new-point-name').value.trim();if(!name){showToast('请输入点位名称');return}
+  const pwd=prompt('请输入管理密码');
+  if(!pwd)return;
+  try{const resp=await authFetch('/api/points',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,pwd:pwd})});
+  const data=await resp.json();if(data.ok){document.getElementById('new-point-name').value='';loadPoints();showToast('✓ 已添加')}else{showToast('✗ '+(data.error||'添加失败'))}}catch(e){showToast('✗ 添加失败')}
+}
+
+// ===== 点位视图切换与标签管理 =====
+let _currentPointView = 'card';
+let _labelEditPointId = null;
+let _labelClearPointId = null;
+let _labelAuthAction = null; // 'edit' or 'clear'
+let _labelClearPointName = '';
+
+function switchPointView(view) {
+  _currentPointView = view;
+  document.getElementById('view-card-btn').classList.toggle('active', view === 'card');
+  document.getElementById('view-table-btn').classList.toggle('active', view === 'table');
+  document.getElementById('point-grid').style.display = view === 'card' ? 'grid' : 'none';
+  document.getElementById('points-table-wrap').style.display = view === 'table' ? 'block' : 'none';
+}
+
+function loadPointsTable(pts) {
+  const tbody = document.getElementById('points-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = pts.map(p => {
+    const tagFull = p.tag_full || '';
+    const hasTag = tagFull.length > 0;
+    const tagHtml = hasTag
+      ? '<span class="col-tag">' + tagFull + '</span>'
+      : '<span class="col-tag empty">未设置</span>';
+    const statusHtml = p.is_active
+      ? '<span class="status-badge status-on">启用</span>'
+      : '<span class="status-badge status-off">停用</span>';
+    const editBtn = '<button class="btn-mini btn-edit" onclick="openLabelEditModal(' + p.id + ',\'' + p.name.replace(/'/g, "\\'") + '\',\'' + tagFull.replace(/'/g, "\\'") + '\')">编辑</button>';
+    const clearBtn = hasTag
+      ? '<button class="btn-mini btn-clear" onclick="openLabelClearModal(' + p.id + ',\'' + p.name.replace(/'/g, "\\'") + '\')">清除</button>'
+      : '';
+    return '<tr><td class="col-id">' + p.id + '</td><td class="col-name">' + p.name + '</td><td>' + tagHtml + '</td><td>' + statusHtml + '</td><td class="col-actions">' + editBtn + clearBtn + '</td></tr>';
+  }).join('');
+}
+
+function openLabelEditModal(id, name, tagFull) {
+  _labelEditPointId = id;
+  document.getElementById('label-edit-point-name').textContent = name;
+  // 解析已有标签
+  const l1Name = document.getElementById('label-l1-name');
+  const l1Order = document.getElementById('label-l1-order');
+  const l2Name = document.getElementById('label-l2-name');
+  const l2Order = document.getElementById('label-l2-order');
+  if (tagFull) {
+    const normalized = tagFull.replace(/\u2014\u2014/g, '-').replace(/--/g, '-');
+    const parts = normalized.split('-', 2);
+    if (parts.length === 2) {
+      const l1Match = parts[0].trim().match(/^(.+?)(\d+)$/);
+      const l2Match = parts[1].trim().match(/^(.+?)(\d+)$/);
+      if (l1Match) { l1Name.value = l1Match[1].trim(); l1Order.value = l1Match[2]; }
+      else { l1Name.value = parts[0].trim(); l1Order.value = ''; }
+      if (l2Match) { l2Name.value = l2Match[1].trim(); l2Order.value = l2Match[2]; }
+      else { l2Name.value = parts[1].trim(); l2Order.value = ''; }
+    } else {
+      l1Name.value = ''; l1Order.value = '';
+      l2Name.value = ''; l2Order.value = '';
+    }
+  } else {
+    l1Name.value = ''; l1Order.value = '';
+    l2Name.value = ''; l2Order.value = '';
+  }
+  updateLabelPreview();
+  document.getElementById('label-edit-modal').classList.add('show');
+}
+
+function closeLabelEditModal() {
+  document.getElementById('label-edit-modal').classList.remove('show');
+  _labelEditPointId = null;
+}
+
+function updateLabelPreview() {
+  const l1 = document.getElementById('label-l1-name').value.trim();
+  const l1o = document.getElementById('label-l1-order').value.trim();
+  const l2 = document.getElementById('label-l2-name').value.trim();
+  const l2o = document.getElementById('label-l2-order').value.trim();
+  const preview = document.getElementById('label-preview');
+  if (l1 && l1o && l2 && l2o) {
+    preview.textContent = l1 + ' ' + l1o + '-' + l2 + ' ' + l2o;
+    preview.classList.remove('empty');
+  } else {
+    preview.textContent = '请填写完整标签信息';
+    preview.classList.add('empty');
+  }
+}
+
+async function saveLabelEdit() {
+  // 不直接保存,先打开密码验证对话框
+  _labelAuthAction = 'edit';
+  openLabelAuthModal();
+}
+
+function openLabelAuthModal() {
+  document.getElementById('label-auth-password').value = '';
+  document.getElementById('label-auth-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('label-auth-password').focus(), 100);
+}
+
+function closeLabelAuthModal() {
+  document.getElementById('label-auth-modal').style.display = 'none';
+  _labelAuthAction = null;
+}
+
+async function confirmLabelAuth() {
+  const password = document.getElementById('label-auth-password').value;
+  if (!password) {
+    showToast('请输入密码');
+    return;
+  }
+
+  const action = _labelAuthAction;
+  _labelAuthAction = null;
+  if (action === 'edit') {
+    await doSaveLabelEdit(password);  // 成功时内部关闭弹窗
+  } else if (action === 'clear') {
+    await doClearLabel(password);  // 成功时内部关闭弹窗
+  }
+}
+
+async function doSaveLabelEdit(password) {
+  const l1 = document.getElementById('label-l1-name').value.trim();
+  const l1o = parseInt(document.getElementById('label-l1-order').value);
+  const l2 = document.getElementById('label-l2-name').value.trim();
+  const l2o = parseInt(document.getElementById('label-l2-order').value);
+  // 验证
+  if (!l1) { showToast('请输入一级标签名'); return; }
+  if (isNaN(l1o) || l1o < 1) { showToast('一级序号必须为正整数'); return; }
+  if (!l2) { showToast('请输入二级标签名'); return; }
+  if (isNaN(l2o) || l2o < 1) { showToast('二级序号必须为正整数'); return; }
+  try {
+    const resp = await authFetch('/api/points/' + _labelEditPointId + '/label', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label_l1: l1, label_l1_order: l1o, label_l2: l2, label_l2_order: l2o, password: password })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      closeLabelAuthModal();
+      closeLabelEditModal();
+      loadPoints();
+      showToast('✓ 标签已保存');
+    } else {
+      showToast('✗ ' + (data.error || '保存失败'));
+    }
+  } catch (e) { showToast('✗ 保存失败'); }
+}
+
+function openLabelClearModal(id, name) {
+  _labelClearPointId = id;
+  _labelClearPointName = name;
+  document.getElementById('label-clear-point-name').textContent = name;
+  const m = document.getElementById('label-clear-modal');
+  m.style.display = 'flex';
+}
+
+function closeLabelClearModal() {
+  document.getElementById('label-clear-modal').style.display = 'none';
+  _labelClearPointId = null;
+}
+
+async function confirmClearLabel() {
+  // 不直接清除,先打开密码验证对话框
+  _labelAuthAction = 'clear';
+  openLabelAuthModal();
+}
+
+async function doClearLabel(password) {
+  try {
+    const resp = await authFetch('/api/points/' + _labelClearPointId + '/label', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: password })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      closeLabelAuthModal();
+      closeLabelClearModal();
+      loadPoints();
+      showToast('✓ 标签已清除');
+    } else {
+      showToast('✗ ' + (data.error || '清除失败'));
+    }
+  } catch (e) { showToast('✗ 清除失败'); }
+}
+
+// ===== 一键修改 =====
+let qeRecords=[];let qeOriginalRecords=[];let qeUploadDate='';let qeUploadRoute='线路 1';let qeUploadFilename='';
+
+async function qeHandleUpload(input){
+  const file=input.files[0];if(!file)return;
+  document.getElementById('qe-upload-status').textContent='⏳ 解析并检查中...';
+  try{
+    // 上传前刷新点位列表，确保新添加的点位被识别
+    await qeLoadAllPoints();
+    const fd=new FormData();fd.append('file',file);
+    const resp=await authFetch('/api/upload',{method:'POST',body:fd});
+    const data=await resp.json();
+    if(data.error){showToast('✗ '+data.error);document.getElementById('qe-upload-status').textContent='✗ '+data.error;return}
+    let records=data.records||[];
+    // extract date/route/filename from uploaded records
+    if(records.length>0){
+      qeUploadDate=records[0].time?records[0].time.split(' ')[0]:'';
+      qeUploadRoute=records[0].route||'线路 1';
+    }
+    qeUploadFilename=file.name.replace(/\.[^.]+$/,'');  // 去掉扩展名
+    // 自动调用补齐API
+    document.getElementById('qe-upload-status').textContent='⏳ 检查每轮打点...';
+    const fixResp=await authFetch('/api/auto-fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({records:records})});
+    const fixData=await fixResp.json();
+    if(fixData.error){showToast('✗ 补齐失败: '+fixData.error);return}
+    qeRecords=fixData.records||[];
+    // 保留后端返回的顺序，不进行前端排序
+    qeOriginalRecords=records; // 原始=上传数据
+    let statusMsg='✓ 上传 '+records.length+' 条 → 补齐后 '+qeRecords.length+' 条 (+'+ fixData.added+')';
+    if(fixData.log&&fixData.log.length){
+      const allOk=fixData.added===0;
+      statusMsg=allOk?'✓ 上传 '+records.length+' 条,所有轮次完整无需补齐':'✓ 补齐完成,新增 '+fixData.added+' 条';
+    }
+    document.getElementById('qe-upload-status').textContent=statusMsg;
+    document.getElementById('qe-status').textContent='';
+    qeRenderResults();
+  }catch(e){
+    showToast('✗ 上传失败');document.getElementById('qe-upload-status').textContent='✗ 上传失败';
+  }
+}
+
+async function qeRenderResults(){
+  const hasRecords=qeRecords.length>0;
+  document.getElementById('qe-diagnose-panel').style.display=hasRecords?'block':'none';
+  document.getElementById('qe-supplement-panel').style.display=hasRecords?'block':'none';
+  document.getElementById('qe-divider1').style.display=hasRecords?'block':'none';
+  if(!hasRecords) return;
+  await qeRenderDiagnose();
+  qeRenderSupplement();
+  qeUpdateSaveInfo();
+}
+
+// ===== 原数据诊断 =====
+async function qeRenderDiagnose(){
+  const origRecords=qeOriginalRecords;
+  if(!origRecords.length) return;
+
+  // 先加载点位列表
+  await qeLoadAllPoints();
+
+  // 按轮次分组
+  const roundStats={};
+  for(let rnd=1;rnd<=12;rnd++) roundStats[rnd]={count:0,points:{},records:[]};
+  origRecords.forEach(r=>{
+    const rnd=r.round||timeToRound(r.time||'');
+    if(!roundStats[rnd]) roundStats[rnd]={count:0,points:{},records:[]};
+    roundStats[rnd].count++;
+    const pt=r.point;
+    if(!roundStats[rnd].points[pt]) roundStats[rnd].points[pt]=0;
+    roundStats[rnd].points[pt]++;
+    roundStats[rnd].records.push(r);
+  });
+
+  // 全局统计
+  const totalRounds=Object.keys(roundStats).filter(k=>roundStats[k].count>0).length;
+  const emptyRounds=12-totalRounds;
+  let totalAnomalies=0;
+  let totalMissing=0;
+  let totalOver=0;
+  for(let rnd=1;rnd<=12;rnd++){
+    const s=roundStats[rnd];
+    if(s.count===0){totalMissing++;continue;}
+    Object.entries(s.points).forEach(([pt,cnt])=>{
+      if(cnt!==2){totalAnomalies++;if(cnt>2) totalOver++;}
+    });
+    // 缺失点位
+    const missingPts=ALL_POINTS.filter(p=>!s.points[p]);
+    totalAnomalies+=missingPts.length;
+    totalMissing+=missingPts.length;
+  }
+
+  // 健康分
+  const healthScore=Math.max(0,Math.round(100-totalAnomalies*3-emptyRounds*8));
+  const healthColor=healthScore>=80?'#00b894':healthScore>=50?'#fdcb6e':'#e17055';
+  const healthEmoji=healthScore>=80?'💪':healthScore>=50?'⚠️':'🔴';
+  document.getElementById('qe-diagnose-score').innerHTML=`<span style="color:${healthColor}">${healthEmoji} ${healthScore}分</span>`;
+
+  // 摘要
+  let summaryHtml=`<div class="qe-stat-row">
+    <div class="qe-stat-box"><div class="qe-stat-num" style="color:#636e72">${origRecords.length}</div><div class="qe-stat-label">原数据条数</div></div>
+    <div class="qe-stat-box"><div class="qe-stat-num" style="color:${totalRounds===12?'#00b894':'#e17055'}">${totalRounds}/12</div><div class="qe-stat-label">有数据轮次</div></div>
+    <div class="qe-stat-box"><div class="qe-stat-num" style="color:${totalAnomalies===0?'#00b894':'#ff4444'}">${totalAnomalies}</div><div class="qe-stat-label">异常项</div></div>
+    <div class="qe-stat-box"><div class="qe-stat-num" style="color:#fdcb6e">${emptyRounds}</div><div class="qe-stat-label">缺少轮次</div></div>
+  </div>`;
+  summaryHtml+=`<div class="qe-health-bar"><div class="qe-health-fill" style="width:${healthScore}%;background:${healthColor}"></div></div>`;
+  document.getElementById('qe-diagnose-summary').innerHTML=summaryHtml;
+
+  // 轮次Tab
+  let tabsHtml='';
+  for(let rnd=1;rnd<=12;rnd++){
+    const s=roundStats[rnd];
+    let cls='tab-empty';
+    if(s.count>0){
+      const hasAnomaly=Object.values(s.points).some(c=>c!==2)||ALL_POINTS.some(p=>!s.points[p]);
+      cls=hasAnomaly?'tab-warn':'tab-ok';
+    }
+    const [rs,re]=ROUND_TIME_RANGES[rnd];
+    tabsHtml+=`<div class="qe-round-tab ${cls}" data-round="${rnd}" onclick="qeDiagnoseRound(${rnd})">第${rnd}轮<br><span style="font-size:0.75em;opacity:0.7">${rs}:00-${re}:00</span></div>`;
+  }
+  document.getElementById('qe-diagnose-tabs').innerHTML=tabsHtml;
+  // 默认显示所有轮次汇总,不激活任何标签
+  qeDiagnoseGlobal();
+}
+
+function qeDiagnoseGlobal(){
+  const detail=document.getElementById('qe-diagnose-detail');
+  const origRecords=qeOriginalRecords;
+
+  // 按轮次分组统计
+  const roundSummary={};
+  for(let rnd=1;rnd<=12;rnd++){
+    const roundRecs=origRecords.filter(r=>(r.round||timeToRound(r.time||''))===rnd);
+    if(roundRecs.length===0){
+      roundSummary[rnd]={records:0,pts:0,qualified:false,anomalies:0,missing:0};
+      continue;
+    }
+    const ptCounts={};
+    roundRecs.forEach(r=>{ptCounts[r.point]=(ptCounts[r.point]||0)+1;});
+    const hasAnomaly=Object.values(ptCounts).some(c=>c!==2)||ALL_POINTS.some(p=>!ptCounts[p]);
+    const missingPts=ALL_POINTS.filter(p=>!ptCounts[p]);
+    let anomalies=0;
+    Object.entries(ptCounts).forEach(([pt,cnt])=>{
+      if(cnt!==2) anomalies++;
+    });
+    anomalies+=missingPts.length;
+    roundSummary[rnd]={records:roundRecs.length,pts:Object.keys(ptCounts).length,qualified:!hasAnomaly,anomalies:anomalies,missing:missingPts};
+  }
+
+  // 渲染全局汇总表格
+  let html='<div style="margin-bottom:12px"><b>所有轮次汇总</b> <span style="color:#888;font-size:0.85em">点击上方标签可查看各轮详细</span></div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">';
+  for(let rnd=1;rnd<=12;rnd++){
+    const s=roundSummary[rnd];
+    const [rs,re]=ROUND_TIME_RANGES[rnd];
+    if(s.records===0){
+      html+='<div style="background:#f0f0f0;border:1px solid #ddd;border-radius:8px;padding:12px;text-align:center">';
+      html+=`<div style="color:#999;font-size:1.2em;font-weight:bold">第${rnd}轮</div>`;
+      html+=`<div style="font-size:0.75em;color:#bbb">${rs}:00-${re}:00</div>`;
+      html+=`<div style="color:#ccc;margin-top:4px">🚫 无数据</div></div>`;
+    }else{
+      const isOk=s.qualified;
+      const bg=isOk?'#e8f5e9':'#ffebee';
+      const border=isOk?'#22c55e':'#e74c3c';
+      const titleColor=isOk?'#16a34a':'#c0392b';
+      const badge=isOk?'<span style="color:#22c55e">✓ 合格</span>':'<span style="color:#e74c3c">✗ 不合格</span>';
+      html+=`<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px">`;
+      html+=`<div style="color:${titleColor};font-weight:bold;font-size:1.1em">第${rnd}轮 ${badge}</div>`;
+      html+=`<div style="font-size:0.75em;color:#888">${rs}:00-${re}:00</div>`;
+      html+=`<div style="margin-top:6px;font-size:0.85em"><span style="color:#666">${s.records}条 · ${s.pts}个点位</span>`;
+      if(!isOk){
+        html+=` <span style="color:#e74c3c">${s.anomalies}处异常</span>`;
+      }
+      html+='</div></div>';
+    }
+  }
+  html+='</div>';
+  detail.innerHTML=html;
+}
+
+let ALL_POINTS=[];
+function qeLoadAllPoints(){
+  return authFetch('/api/points').then(r=>r.json()).then(pts=>{
+    ALL_POINTS=pts.filter(p=>p.is_active).sort((a,b)=>a.sort_order-b.sort_order).map(p=>p.name);
+  });
+}
+
+function qeDiagnoseRound(rnd){
+  // 激活tab
+  document.querySelectorAll('#qe-diagnose-tabs .qe-round-tab').forEach(t=>t.classList.toggle('active',parseInt(t.dataset.round)===rnd));
+
+  const origRecords=qeOriginalRecords;
+  const roundRecs=origRecords.filter(r=>(r.round||timeToRound(r.time||''))===rnd);
+  const detail=document.getElementById('qe-diagnose-detail');
+
+  if(roundRecs.length===0){
+    const [es,ee]=ROUND_TIME_RANGES[rnd];
+    detail.innerHTML=`<div style="text-align:center;padding:20px;color:#636e72"><div style="font-size:2em;margin-bottom:8px">🚫</div>第${rnd}轮 无原数据<br><span style="font-size:0.85em;color:#888">对应 ${es}:00-${ee}:00 时段</span></div>`;
+    return;
+  }
+
+  // 点位统计
+  const ptCounts={};
+  roundRecs.forEach(r=>{ptCounts[r.point]=(ptCounts[r.point]||0)+1;});
+
+  // ===== 本轮统计 =====
+  const qualifiedPts=[];  // 打点>=2次
+  const unqualifiedPts=[]; // 打点<2次
+  const nonDbPts=[];       // 不在数据库的点位
+  Object.entries(ptCounts).forEach(([pt,cnt])=>{
+    if(cnt>=2){
+      qualifiedPts.push([pt,cnt]);
+    }else{
+      unqualifiedPts.push([pt,cnt]);
+    }
+  });
+  // 检测不在数据库的点位
+  Object.keys(ptCounts).forEach(pt=>{
+    if(!ALL_POINTS.includes(pt)){
+      nonDbPts.push(pt);
+    }
+  });
+
+  let statHtml=`<div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+    <div style="background:#f5f7fa;padding:8px 16px;border-radius:8px;border:1px solid #dfe6e9">
+      <span style="color:#00b894;font-weight:bold">${qualifiedPts.length}</span> 个合格点位
+    </div>
+    <div style="background:#f5f7fa;padding:8px 16px;border-radius:8px;border:1px solid #dfe6e9">
+      <span style="color:#e17055;font-weight:bold">${unqualifiedPts.length}</span> 个不合格点位
+    </div>`;
+  if(nonDbPts.length>0){
+    statHtml+=`<div style="padding:8px 16px;border-radius:8px;border:1px solid #16213e">
+      <span style="color:#fdcb6e;font-weight:bold">${nonDbPts.length}</span> 个非库点位
+    </div>`;
+  }
+  statHtml+='</div>';
+
+  const [ds,de]=ROUND_TIME_RANGES[rnd];
+  let html=`<div style="margin-bottom:8px;color:#aaa;font-size:0.85em">第${rnd}轮 (${ds}:00-${de}:00) · 共${roundRecs.length}条 · ${Object.keys(ptCounts).length}个点位</div>`;
+  html+=statHtml;
+  html+='<div class="qe-point-grid">';
+
+  // 按 ALL_POINTS 顺序遍历所有点位,已打点和未打点交错显示
+  ALL_POINTS.forEach(pt=>{
+    const cnt=ptCounts[pt]||0;
+    if(cnt===0){
+      // 未打点
+      html+=`<div class="qe-point-card missing"><span class="qe-point-name">🚫 ${pt}</span><span class="qe-point-count gray">未打点</span></div>`;
+    }else{
+      // 已打点
+      const isQualified=cnt===2;
+      const cls=isQualified?'ok-qualified':'warn';
+      const cntCls=isQualified?'green':'red';
+      const icon=isQualified?'✅':'❌';
+      const label=cnt===1?'缺 1 次':cnt>2?`多${cnt-2}次`:'OK';
+      html+=`<div class="qe-point-card ${cls}"><span class="qe-point-name">${icon} ${pt}</span><span class="qe-point-count ${cntCls}">${cnt}次 ${cnt!==2?'('+label+')':''}</span></div>`;
+    }
+  });
+
+  html+='</div>';
+  detail.innerHTML=html;
+}
+
+// ===== 补充报告 =====
+function qeRenderSupplement(){
+  const origRecords=qeOriginalRecords;
+  const newRecords=qeRecords;
+  if(!newRecords.length) return;
+
+  // 按轮次统计补充
+  const origByRound={};
+  const newByRound={};
+  for(let rnd=1;rnd<=12;rnd++){origByRound[rnd]=[];newByRound[rnd]=[];}
+  origRecords.forEach(r=>{const rnd=r.round||timeToRound(r.time||'');origByRound[rnd].push(r);});
+  newRecords.forEach(r=>{const rnd=r.round||timeToRound(r.time||'');newByRound[rnd].push(r);});
+
+  let totalOrig=origRecords.length;
+  let totalNew=newRecords.length;
+  let totalAdded=Math.max(0,totalNew-totalOrig);
+  let totalRemoved=Math.max(0,totalOrig-totalNew);
+
+  // 补充轮数
+  let supplementedRounds=0;
+  for(let rnd=1;rnd<=12;rnd++){
+    if(newByRound[rnd].length>origByRound[rnd].length) supplementedRounds++;
+  }
+
+  const badgeEmoji=totalAdded>0?'🎉':totalRemoved>0?'⚠️':'✅';
+  const badgeText=totalAdded>0?`+${totalAdded}条`:totalRemoved>0?`-${totalRemoved}条`:'';
+  document.getElementById('qe-supplement-badge').innerHTML=`<span style="color:${totalAdded>0?'#00b894':'#e17055'}">${badgeEmoji} ${badgeText}</span>`;
+
+  // 摘要 - 只显示补充/删除
+  let summaryHtml=`<div class="qe-stat-row">
+    <div class="qe-stat-box"><div class="qe-stat-num" style="color:#00b894">+${totalAdded}</div><div class="qe-stat-label">补充条数</div></div>
+    <div class="qe-stat-box"><div class="qe-stat-num" style="color:${totalRemoved>0?'#e17055':'#636e72'}">-${totalRemoved}</div><div class="qe-stat-label">删除条数</div></div>
+  </div>`;
+  document.getElementById('qe-supplement-summary').innerHTML=summaryHtml;
+
+  // 轮次Tab
+  let tabsHtml='';
+  for(let rnd=1;rnd<=12;rnd++){
+    const orig=origByRound[rnd].length;
+    const now=newByRound[rnd].length;
+    const diff=now-orig;
+    let cls=diff>0?'tab-supplement':diff===0&&now>0?'tab-ok':'tab-empty';
+    if(orig===0&&now>0) cls='tab-supplement';
+    const badge=diff>0?` (+${diff})`:diff<0?` (${diff})`:'';
+    tabsHtml+=`<div class="qe-round-tab ${cls}" data-round="${rnd}" onclick="qeSupplementRound(${rnd})">第${rnd}轮${badge}</div>`;
+  }
+  document.getElementById('qe-supplement-tabs').innerHTML=tabsHtml;
+  qeSupplementRound(1);
+}
+
+function qeSupplementRound(rnd){
+  document.querySelectorAll('#qe-supplement-tabs .qe-round-tab').forEach(t=>t.classList.toggle('active',parseInt(t.dataset.round)===rnd));
+
+  const origRecords=qeOriginalRecords.filter(r=>(r.round||timeToRound(r.time||''))===rnd);
+  const newRecords=qeRecords.filter(r=>(r.round||timeToRound(r.time||''))===rnd);
+  const detail=document.getElementById('qe-supplement-detail');
+
+  if(origRecords.length===0&&newRecords.length===0){
+    detail.innerHTML=`<div style="text-align:center;padding:20px;color:#636e72"><div style="font-size:2em;margin-bottom:8px">🚫</div>第${rnd}轮 无数据</div>`;
+    return;
+  }
+
+  // 对比原数据 vs 补充后
+  const origPts={};
+  const newPts={};
+  origRecords.forEach(r=>{origPts[r.point]=(origPts[r.point]||0)+1;});
+  newRecords.forEach(r=>{newPts[r.point]=(newPts[r.point]||0)+1;});
+
+  const [ss,se]=ROUND_TIME_RANGES[rnd];
+  let html=`<div style="margin-bottom:8px;color:#aaa;font-size:0.85em">第${rnd}轮 (${ss}:00-${se}:00) · 原${origRecords.length}条 → 现${newRecords.length}条</div>`;
+  html+='<div class="qe-point-grid">';
+
+  const allPts=[...new Set([...Object.keys(origPts),...Object.keys(newPts),...ALL_POINTS])];
+  // 按ALL_POINTS顺序排
+  allPts.sort((a,b)=>{
+    const ia=ALL_POINTS.indexOf(a),ib=ALL_POINTS.indexOf(b);
+    return (ia===-1?999:ia)-(ib===-1?999:ib);
+  });
+
+  allPts.forEach(pt=>{
+    const oc=origPts[pt]||0;
+    const nc=newPts[pt]||0;
+    const diff=nc-oc;
+    if(oc===0&&nc===0) return; // 都没有不显示
+    const cls=oc===0?'new':diff<0?'removed':'kept';
+    const icon=oc===0?'🆕':diff<0?'🗑️':'📦';
+    // 修改格式:+2次 而不是 2次 +2
+    const changeTag=diff>0?`+${diff}次`:diff<0?`${diff}次`:'';
+    const cntCls=diff===0?'gray':diff>0?'green':'red';
+    html+=`<div class="qe-point-card ${cls}"><span class="qe-point-name">${icon} ${pt}</span><span class="qe-point-count ${cntCls}">${changeTag}</span></div>`;
+  });
+
+  html+='</div>';
+  detail.innerHTML=html;
+}
+
+function qeDeleteOne(idx){
+  qeRecords.splice(idx,1);
+  qeRenderResults();
+  showToast('已删除第'+(idx+1)+'条');
+}
+
+function qeReset(){
+  qeRecords=JSON.parse(JSON.stringify(qeOriginalRecords));
+  qeRenderResults();
+  showToast('已重置为原始数据');
+}
+
+function qeUpdateSaveInfo(){
+  const hasChanges=JSON.stringify(qeRecords)!==JSON.stringify(qeOriginalRecords);
+  document.getElementById('qe-save-panel').style.display=hasChanges?'block':'none';
+  const orig=qeOriginalRecords.length,curr=qeRecords.length;
+  document.getElementById('qe-save-info').textContent='原始 '+orig+' 条 → 当前 '+curr+' 条 ('+(curr<orig?'删除 '+(orig-curr)+' 条':'无删除')+')';
+}
+
+async function qeSave(){
+  const d=qeUploadDate;const route=qeUploadRoute;
+  if(!d){showToast('缺少日期信息');return}
+  showToast('💾 保存中...');
+  try{
+    const resp=await authFetch('/api/records/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:d,route:route,records:qeRecords})});
+    const data=await resp.json();
+    if(data.ok){
+      qeOriginalRecords=JSON.parse(JSON.stringify(qeRecords));
+      qeUpdateSaveInfo();
+      showToast('✓ 已保存 '+qeRecords.length+' 条');
+    }else{showToast('✗ '+data.error)}
+  }catch(e){showToast('✗ '+e.message)}
+}
+
+async function qeExport(fmt){
+  if(!qeRecords.length){showToast('没有数据可导出');return}
+  // 保留后端返回的顺序，不进行前端排序
+  const sortedRecords=qeRecords;
+  showToast('📥 导出 '+sortedRecords.length+' 条数据中...');
+  try{
+    const routeName = qeOriginalRecords[0].route || qeUploadRoute || '';
+    const resp=await authFetch('/api/export-prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({records:sortedRecords,format:fmt,route_name:routeName,original_filename:qeUploadFilename})});
+    console.log('[QE Export] prepare status:',resp.status);
+    if(!resp.ok){let errMsg='导出失败';try{const e=await resp.json();errMsg=e.error||errMsg}catch(e2){}throw new Error(errMsg)}
+
+    const data=await resp.json();
+    if(data.error){throw new Error(data.error)}
+
+    console.log('[QE Export] token:',data.token,'filename:',data.filename);
+
+    // 直接跳转到下载链接 (兼容性更好)
+    const downloadUrl=`/api/export-download/${data.token}.${fmt}`;
+    window.location.href=downloadUrl;
+
+    showToast('✓ 开始下载 ('+qeRecords.length+'条)');
+  }catch(e){showToast('✗ '+e.message);console.error('[QE Export] error:',e)}
+}
+
+async function qeExportAsPdf(){
+  if(!qeRecords.length){showToast('没有数据可导出');return}
+  showToast('📄 导出 PDF ('+qeRecords.length+'条数据)...');
+  try{
+    const routeName = qeOriginalRecords[0].route || qeUploadRoute || '';
+    const resp=await authFetch('/api/export-pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({records:qeRecords,route_name:routeName,original_filename:qeUploadFilename})});
+    if(!resp.ok){let errMsg='导出失败';try{const e=await resp.json();errMsg=e.error||errMsg}catch(e2){}throw new Error(errMsg)}
+
+    const data=await resp.json();
+    if(data.error){throw new Error(data.error)}
+
+    const downloadUrl=`/api/export-download/${data.token}.pdf`;
+    window.location.href=downloadUrl;
+
+    showToast('✓ PDF 已开始下载 ('+qeRecords.length+'条)')
+  }catch(e){showToast('✗ '+e.message)}
+}
+
+// ===== 重置密码 =====
+function showResetPassword(){
+  document.getElementById('reset-key').value='';
+  document.getElementById('reset-new-pwd').value='';
+  document.getElementById('reset-confirm-pwd').value='';
+  document.getElementById('reset-error').textContent='';
+  document.getElementById('reset-pwd-overlay').style.display='flex';
+  setTimeout(()=>document.getElementById('reset-key').focus(),100);
+}
+function closeResetPassword(){
+  document.getElementById('reset-pwd-overlay').style.display='none';
+}
+async function doResetPassword(){
+  const key=document.getElementById('reset-key').value.trim();
+  const newPwd=document.getElementById('reset-new-pwd').value;
+  const confirmPwd=document.getElementById('reset-confirm-pwd').value;
+  const errEl=document.getElementById('reset-error');
+  errEl.textContent='';
+  if(!key){errEl.textContent='请输入重置密钥';return}
+  if(!newPwd){errEl.textContent='请输入新密码';return}
+  if(newPwd.length<3){errEl.textContent='新密码长度至少3位';return}
+  if(newPwd!==confirmPwd){errEl.textContent='两次密码输入不一致';return}
+  try{
+    const resp=await fetch('/api/admin/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reset_key:key,new_password:newPwd})});
+    const data=await resp.json();
+    if(data.ok){
+      closeResetPassword();
+      document.getElementById('login-pwd').value=newPwd;
+      showToast('✓ 密码重置成功，请使用新密码登录');
+    }else{
+      errEl.textContent=data.error||'重置失败';
+    }
+  }catch(e){
+    errEl.textContent='网络错误';
+  }
+}
+
+async function doLogin(){
+  const pwd=document.getElementById('login-pwd').value;
+  if(!pwd)return;
+  try{
+    const resp=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
+    const data=await resp.json();
+    if(data.ok){
+      document.getElementById('login-overlay').style.display='none';
+      sessionStorage.setItem('patrol_auth','1');
+      if(data.token) sessionStorage.setItem('patrol_token', data.token);
+      // 登录成功后重新初始化数据(init()里的API调用在未登录时可能401)
+      init();
+    }else{
+      document.getElementById('login-error').textContent=data.error||'登录失败';
+      document.getElementById('login-pwd').value='';
+      document.getElementById('login-pwd').focus();
+    }
+  }catch(e){
+    document.getElementById('login-error').textContent='网络错误';
+  }
+}
+
+let _initDone=false;
+async function init(){
+  // 防止重复绑定事件监听器
+  if(_initDone){
+    // 登录后重新加载数据
+    await qeLoadAllPoints();
+    try{const resp=await authFetch('/api/overview');const data=await resp.json();document.getElementById('update-info').textContent='代码更新：'+(data.update_date||'-');}catch(e){}
+    return;
+  }
+  _initDone=true;
+  // 检查鉴权状态
+  try{
+    const authResp=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:''})});
+    const authData=await authResp.json();
+    if(authData.enabled && !sessionStorage.getItem('patrol_auth')){
+      document.getElementById('login-overlay').style.display='flex';
+      document.getElementById('login-pwd').focus();
+    }
+  }catch(e){}
+
+  // 一键修改上传区拖放
+  const qeUz=document.getElementById('qe-upload-zone');
+  if(qeUz){
+    qeUz.addEventListener('dragover',e=>{e.preventDefault();qeUz.classList.add('dragover')});
+    qeUz.addEventListener('dragleave',()=>qeUz.classList.remove('dragover'));
+    qeUz.addEventListener('drop',e=>{e.preventDefault();qeUz.classList.remove('dragover');if(e.dataTransfer.files.length){document.getElementById('qe-file-input').files=e.dataTransfer.files;qeHandleUpload(document.getElementById('qe-file-input'))}});
+  }
+  // 标签编辑弹窗实时预览
+  ['label-l1-name','label-l1-order','label-l2-name','label-l2-order'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('input', updateLabelPreview);
+  });
+  // 加载巡更点列表(诊断用)
+  await qeLoadAllPoints();
+  try{const resp=await authFetch('/api/overview');const data=await resp.json();
+  document.getElementById('update-info').textContent='代码更新：'+(data.update_date||'-');
+  }catch(e){console.warn('overview load failed:',e)}
+}
+// ===== 动线管理(点位排序)=====
+let currentRouteId = null;
+let currentRoutePoints = []; // [{id, name, sort_order}]
+let selectedPointIndex = -1;
+
+// 加载动线列表到选择器
+async function loadRouteSelect(){
+  try{
+    const resp = await authFetch('/api/routes');
+    const data = await resp.json();
+    const routes = data.routes || [];
+    const select = document.getElementById('route-select');
+    if(!select) return;
+
+    select.innerHTML = '<option value="">-- 选择动线 --</option>' +
+      routes.map(r => '<option value="'+r.name+'">'+r.name+'</option>').join('');
+
+    // 生成页面已移除,不再需要同步选择器
+  }catch(e){
+    console.error('加载动线选择器失败:', e);
+  }
+}
+
+// 加载动线列表(底部卡片)
+async function loadRoutes(){
+  try{
+    const resp = await authFetch('/api/routes');
+    const data = await resp.json();
+    const routes = data.routes || [];
+    const container = document.getElementById('route-list');
+    if(!container) return;
+
+    if(routes.length === 0){
+      container.innerHTML = '<p style="color:#888;font-size:0.9em;padding:20px;text-align:center">暂无自定义动线</p>';
+      return;
+    }
+
+    container.innerHTML = routes.map(r => {
+      const pointCount = r.point_count || 25;
+      const safeName = escapeHtml(r.name);
+      const safeDesc = escapeHtml(r.description || '无描述');
+      return `
+        <div class="route-card" data-name="${encodeURIComponent(r.name)}" style="cursor:pointer">
+          <div class="route-card-header">
+            <div class="route-card-title">${safeName}</div>
+          </div>
+          <div class="route-card-desc">${safeDesc}</div>
+          <div class="route-card-points">📍 ${pointCount} 个点位(点击管理顺序)</div>
+          <div class="route-card-actions">
+            <button class="btn btn-green btn-select-route" data-name="${encodeURIComponent(r.name)}" style="padding:6px 12px;font-size:0.85em">🛠️ 管理</button>
+            <button class="btn btn-Secondary btn-edit-route" data-name="${encodeURIComponent(r.name)}" data-desc="${encodeURIComponent(r.description || '')}" style="padding:6px 12px;font-size:0.85em">✏️ 编辑</button>
+            ${r.name !== '线路 1' ? `<button class="btn btn-danger btn-delete-route" data-name="${encodeURIComponent(r.name)}">🗑️ 删除</button>` : '<span style="color:#888;font-size:0.85em">默认动线</span>'}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }catch(e){
+    console.error('加载动线列表失败:', e);
+  }
+}
+
+// 选择动线进行编辑
+async function selectRoute(routeName){
+  // 先确保选择器已加载选项
+  await loadRouteSelect();
+  document.getElementById('route-select').value = routeName;
+  // 直接传入动线名加载点位,不依赖 select 值
+  await loadRoutePointsByName(routeName);
+}
+
+// 加载动线的点位顺序
+async function loadRoutePoints(){
+  const routeName = document.getElementById('route-select').value;
+  if(!routeName){
+    document.getElementById('route-sort-container').style.display = 'none';
+    return;
+  }
+  await loadRoutePointsByName(routeName);
+}
+
+// 按动线名加载点位(不依赖 select 值)
+async function loadRoutePointsByName(routeName){
+  if(!routeName){
+    document.getElementById('route-sort-container').style.display = 'none';
+    return;
+  }
+  try{
+    // 获取动线详情(包含点位顺序)
+    const resp = await authFetch('/api/routes/detail?name=' + encodeURIComponent(routeName));
+    const data = await resp.json();
+
+    if(data.error){
+      showToast('✗ ' + data.error);
+      return;
+    }
+
+    currentRouteId = data.id;
+    currentRoutePoints = data.points || []; // [{id, name, sort_order}]
+
+    document.getElementById('edit-route-name').value = routeName;
+    document.getElementById('route-sort-container').style.display = 'block';
+
+    renderRoutePoints();
+  }catch(e){
+    showToast('✗ 加载点位顺序失败');
+    console.error(e);
+  }
+}
+
+// HTML 转义函数(防 XSS)
+function escapeHtml(str){
+  if(!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
+// 渲染点位列表
+function renderRoutePoints(){
+  const container = document.getElementById('route-points-list');
+  if(!container) return;
+
+  // 按 sort_order 排序
+  currentRoutePoints.sort((a, b) => a.sort_order - b.sort_order);
+
+  container.innerHTML = currentRoutePoints.map((p, idx) => {
+    // 构建标签显示
+    const tagFull = p.tag_full || '';
+    const tagHtml = tagFull
+      ? '<span class="route-point-tag">' + escapeHtml(tagFull) + '</span>'
+      : '<span class="route-point-tag empty" title="可在点位管理中设置标签">[未设置]</span>';
+
+    return `<div class="route-point-item ${idx === selectedPointIndex ? 'selected' : ''}"
+         draggable="true"
+         data-index="${idx}"
+         onclick="selectPoint(${idx})"
+         ondragstart="handleDragStart(event, ${idx})"
+         ondragend="handleDragEnd(event)"
+         ondragover="handleDragOver(event)"
+         ondrop="handleDrop(event, ${idx})"
+         ondragenter="handleDragEnter(event, ${idx})"
+         ondragleave="handleDragLeave(event)">
+      <span class="drag-handle" title="拖动排序">☰</span>
+      <div class="route-point-order">${idx + 1}</div>
+      <div class="route-point-name">
+        ${escapeHtml(p.name)}
+        ${tagHtml}
+      </div>
+      <div class="route-point-actions">
+        <button class="btn btn-secondary" onclick="event.stopPropagation();movePoint(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>↑ 上移</button>
+        <button class="btn btn-secondary" onclick="event.stopPropagation();movePoint(${idx}, 1)" ${idx === currentRoutePoints.length - 1 ? 'disabled' : ''}>↓ 下移</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// 拖拽排序相关变量
+let draggedIndex = null;
+let autoScrollRAF = null; // 自动滚动动画帧ID
+
+// 开始拖拽
+function handleDragStart(event, idx){
+  draggedIndex = idx;
+  event.target.classList.add('dragging');
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', idx);
+}
+
+// 结束拖拽
+function handleDragEnd(event){
+  event.target.classList.remove('dragging');
+  document.querySelectorAll('.route-point-item').forEach(item => {
+    item.classList.remove('drag-over');
+  });
+  // 停止自动滚动
+  if (autoScrollRAF) {
+    cancelAnimationFrame(autoScrollRAF);
+    autoScrollRAF = null;
+  }
+  draggedIndex = null;
+}
+
+// 拖拽经过 - 含自动滚动逻辑
+function handleDragOver(event){
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+
+  // 自动滚动:拖拽到列表顶部/底部边缘时自动滚动
+  const container = document.getElementById('route-points-list');
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  const threshold = 80; // 触发滚动的阈值(px)
+  const maxSpeed = 12; // 最大滚动速度(px/frame)
+
+  // 计算距离顶/底的距离
+  const distToTop = event.clientY - rect.top;
+  const distToBottom = rect.bottom - event.clientY;
+
+  let scrollDelta = 0;
+  if (distToTop < threshold && distToTop >= 0) {
+    // 靠近顶部,向上滚动,越近越快
+    scrollDelta = -maxSpeed * (1 - distToTop / threshold);
+  } else if (distToBottom < threshold && distToBottom >= 0) {
+    // 靠近底部,向下滚动,越近越快
+    scrollDelta = maxSpeed * (1 - distToBottom / threshold);
+  }
+
+  // 用 requestAnimationFrame 实现平滑滚动
+  if (autoScrollRAF) cancelAnimationFrame(autoScrollRAF);
+  if (scrollDelta !== 0) {
+    const doScroll = () => {
+      container.scrollTop += scrollDelta;
+      autoScrollRAF = requestAnimationFrame(doScroll);
+    };
+    autoScrollRAF = requestAnimationFrame(doScroll);
+  }
+}
+
+// 进入拖拽目标
+function handleDragEnter(event, idx){
+  event.preventDefault();
+  if (draggedIndex !== null && draggedIndex !== idx) {
+    event.currentTarget.classList.add('drag-over');
+  }
+}
+
+// 离开拖拽目标
+function handleDragLeave(event){
+  event.currentTarget.classList.remove('drag-over');
+}
+
+// 放下拖拽 - 插入模式(非交换模式)
+function handleDrop(event, targetIdx){
+  event.preventDefault();
+  event.currentTarget.classList.remove('drag-over');
+
+  // 停止自动滚动
+  if (autoScrollRAF) {
+    cancelAnimationFrame(autoScrollRAF);
+    autoScrollRAF = null;
+  }
+
+  if (draggedIndex === null || draggedIndex === targetIdx) return;
+
+  // 从原位置取出被拖拽的元素
+  const draggedItem = currentRoutePoints[draggedIndex];
+  currentRoutePoints.splice(draggedIndex, 1);
+
+  // 计算插入位置:如果从上方拖到下方,移除后目标索引需-1
+  const adjustedTargetIdx = draggedIndex < targetIdx ? targetIdx - 1 : targetIdx;
+  currentRoutePoints.splice(adjustedTargetIdx, 0, draggedItem);
+
+  // 重新计算所有点位的 sort_order
+  currentRoutePoints.forEach((p, i) => {
+    p.sort_order = i;
+  });
+
+  // 重新渲染
+  renderRoutePoints();
+  showToast('✓ 已调整顺序,点击【💾 保存顺序】生效');
+}
+
+// 选择点位
+function selectPoint(idx){
+  selectedPointIndex = idx;
+  renderRoutePoints();
+}
+
+// 移动点位
+function movePoint(idx, direction){
+  const newIdx = idx + direction;
+  if(newIdx < 0 || newIdx >= currentRoutePoints.length) return;
+
+  // 交换 sort_order
+  const temp = currentRoutePoints[idx].sort_order;
+  currentRoutePoints[idx].sort_order = currentRoutePoints[newIdx].sort_order;
+  currentRoutePoints[newIdx].sort_order = temp;
+
+  // 交换数组位置
+  [currentRoutePoints[idx], currentRoutePoints[newIdx]] = [currentRoutePoints[newIdx], currentRoutePoints[idx]];
+
+  selectedPointIndex = newIdx;
+  renderRoutePoints();
+}
+
+// 保存点位顺序
+async function saveRouteOrder(){
+  if(!currentRouteId){
+    showToast('✗ 未选择动线');
+    return;
+  }
+
+  const pwd = prompt('请输入管理密码:', '');
+  if(!pwd){
+    showToast('✗ 已取消');
+    return;
+  }
+
+  try{
+    // 按当前顺序提取 point_ids
+    const pointIds = currentRoutePoints.map(p => p.id);
+
+    const resp = await authFetch('/api/routes/save-order', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        route_id: currentRouteId,
+        point_ids: pointIds,
+        pwd: pwd
+      })
+    });
+
+    const data = await resp.json();
+
+    if(data.ok){
+      showToast('✓ 点位顺序已保存');
+      loadRoutes();
+    }else{
+      showToast('✗ ' + (data.error || '保存失败'));
+    }
+  }catch(e){
+    showToast('✗ 保存失败:' + e.message);
+  }
+}
+
+// 显示新增动线弹窗
+// 当前编辑模式: 'new' 或 'edit'
+let routeEditMode = 'new';
+let editingRouteName = '';
+
+function showNewRouteModal(){
+  routeEditMode = 'new';
+  editingRouteName = '';
+  document.getElementById('route-modal-title').textContent = '新增动线';
+  document.getElementById('modal-route-name').value = '';
+  document.getElementById('modal-route-desc').value = '';
+  document.getElementById('modal-route-name').readOnly = false;
+  document.getElementById('route-save-btn').textContent = '💾 保存动线';
+  document.getElementById('route-modal').style.display = 'flex';
+}
+
+// 打开编辑弹窗
+function openEditRouteModal(name, desc){
+  routeEditMode = 'edit';
+  editingRouteName = name;
+  document.getElementById('route-modal-title').textContent = '编辑动线';
+  document.getElementById('modal-route-name').value = name;
+  document.getElementById('modal-route-desc').value = desc || '';
+  document.getElementById('modal-route-name').readOnly = false;
+  document.getElementById('route-save-btn').textContent = '💾 保存修改';
+  document.getElementById('route-modal').style.display = 'flex';
+}
+
+// 关闭弹窗
+function closeRouteModal(){
+  document.getElementById('route-modal').style.display = 'none';
+  routeEditMode = 'new';
+  editingRouteName = '';
+}
+
+// 保存动线(新增或编辑)
+
+// [FIX 2026-06-23] 事件委托：处理动线卡片的点击事件（XSS 防护）
+document.addEventListener('click', function(e){
+  // 处理编辑按钮点击
+  const btnEdit = e.target.closest('.btn-edit-route');
+  if(btnEdit){
+    e.stopPropagation();
+    openEditRouteModal(decodeURIComponent(btnEdit.dataset.name), decodeURIComponent(btnEdit.dataset.desc));
+    return;
+  }
+  // 处理管理/选择按钮点击
+  const btnSelect = e.target.closest('.btn-select-route');
+  if(btnSelect){
+    e.stopPropagation();
+    selectRoute(decodeURIComponent(btnSelect.dataset.name));
+    return;
+  }
+  // 处理删除按钮点击
+  const btnDelete = e.target.closest('.btn-delete-route');
+  if(btnDelete){
+    e.stopPropagation();
+    deleteRoute(decodeURIComponent(btnDelete.dataset.name));
+    return;
+  }
+  // 处理卡片整体点击选择动线
+  const card = e.target.closest('.route-card');
+  if(card && !e.target.closest('.btn')){
+    selectRoute(decodeURIComponent(card.dataset.name));
+  }
+});
+
+async function saveRoute(){
+  const name = document.getElementById('modal-route-name').value.trim();
+  const desc = document.getElementById('modal-route-desc').value.trim();
+
+  if(!name){
+    showToast('✗ 请输入动线名称');
+    return;
+  }
+
+  const pwd = prompt('请输入管理密码:', '');
+  if(!pwd){
+    showToast('✗ 已取消');
+    return;
+  }
+
+  try{
+    let resp, data;
+    
+    if(routeEditMode === 'edit'){
+      // 编辑模式:调用更新 API
+      resp = await authFetch('/api/routes/update', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          old_name: editingRouteName,
+          new_name: name,
+          description: desc,
+          pwd: pwd
+        })
+      });
+    }else{
+      // 新增模式:调用保存 API
+      resp = await authFetch('/api/routes/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          name: name,
+          description: desc,
+          pwd: pwd
+        })
+      });
+    }
+
+    data = await resp.json();
+
+    if(data.ok){
+      if(routeEditMode === 'edit'){
+        showToast('✓ 动线已更新');
+      }else{
+        showToast('✓ 动线已创建');
+        await loadRouteSelect();
+        // 自动选中新创建的动线
+        document.getElementById('route-select').value = name;
+        await loadRoutePointsByName(name);
+      }
+      closeRouteModal();
+      loadRoutes();
+    }else{
+      showToast('✗ ' + (data.error || '保存失败'));
+    }
+  }catch(e){
+    showToast('✗ 保存失败:' + e.message);
+  }
+}
+
+// 删除动线
+async function deleteRoute(routeName){
+  if(!confirm('确定要删除动线"' + routeName + '"吗?删除后无法恢复!')){
+    return;
+  }
+
+  const pwd = prompt('请输入管理密码:', '');
+  if(!pwd){
+    showToast('✗ 已取消');
+    return;
+  }
+
+  try{
+    const resp = await authFetch('/api/routes/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: routeName, pwd: pwd})
+    });
+
+    const data = await resp.json();
+
+    if(data.ok){
+      showToast('✓ 动线已删除');
+      loadRouteSelect();
+      loadRoutes();
+      document.getElementById('route-sort-container').style.display = 'none';
+    }else{
+      showToast('✗ ' + (data.error || '删除失败'));
+    }
+  }catch(e){
+    showToast('✗ 删除失败:' + e.message);
+  }
+}
+
+// ===== 设备授权检测 =====
+let _deviceAuthChecked = false;
+
+async function checkDeviceAuth(){
+  if(_deviceAuthChecked) return;
+  try{
+    const resp = await fetch('/api/auth/check-device');
+    const data = await resp.json();
+    if(!data.authorized){
+      _deviceAuthChecked = true;
+      document.getElementById('auth-unauthorized-overlay').style.display = 'flex';
+    }
+  }catch(e){
+    console.warn('设备授权检查失败:', e);
+  }
+}
+
+function authAbandon(){
+  // 关闭窗口/退出程序
+  window.open('','_self');
+  window.close();
+  // 如果 window.close() 被浏览器阻止，显示提示
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a1a;color:#e17055;font-size:1.2em;text-align:center;padding:20px"><div>🚫 设备未授权，系统已锁定。<br>请关闭此页面。</div></div>';
+}
+
+function authShow2FA(){
+  document.getElementById('auth-unauthorized-overlay').style.display = 'none';
+  document.getElementById('auth-2fa-code').value = '';
+  document.getElementById('auth-2fa-error').textContent = '';
+  document.getElementById('auth-secret-key').value = '加载中...';
+  document.getElementById('auth-qrcode').innerHTML = '';
+  document.getElementById('auth-2fa-overlay').style.display = 'flex';
+  
+  // 加载 2FA 信息
+  authLoad2FAInfo();
+  
+  setTimeout(()=>document.getElementById('auth-2fa-code').focus(), 100);
+}
+
+// 加载 2FA 信息并生成二维码
+async function authLoad2FAInfo(){
+  try{
+    const resp = await authFetch('/api/auth/2fa-info', {method: 'GET'});
+    const data = await resp.json();
+    if(data.success){
+      // 显示密钥
+      document.getElementById('auth-secret-key').value = data.secret_key;
+      // 生成二维码
+      setTimeout(() => {
+        new QRCode(document.getElementById('auth-qrcode'), {
+          text: data.otpauth_uri,
+          width: 180,
+          height: 180,
+          colorDark : '#000000',
+          colorLight : '#ffffff',
+          correctLevel : QRCode.CorrectLevel.M
+        });
+      }, 100);
+    }else{
+      document.getElementById('auth-secret-key').value = '加载失败';
+    }
+  }catch(e){
+    console.error('加载 2FA 信息失败:', e);
+    document.getElementById('auth-secret-key').value = '加载失败';
+  }
+}
+
+// 复制密钥到剪贴板
+function authCopySecret(){
+  const secretKey = document.getElementById('auth-secret-key');
+  secretKey.select();
+  document.execCommand('copy');
+  showToast('密钥已复制到剪贴板');
+}
+
+function authCancel2FA(){
+  document.getElementById('auth-2fa-overlay').style.display = 'none';
+  document.getElementById('auth-unauthorized-overlay').style.display = 'flex';
+}
+
+async function authActivate(){
+  const code = document.getElementById('auth-2fa-code').value.trim();
+  const errEl = document.getElementById('auth-2fa-error');
+  errEl.textContent = '';
+  if(!code || code.length !== 6){
+    errEl.textContent = '请输入 6 位数字密钥';
+    return;
+  }
+  try{
+    const resp = await authFetch('/api/auth/activate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code: code})
+    });
+    const data = await resp.json();
+    if(data.success){
+      document.getElementById('auth-2fa-overlay').style.display = 'none';
+      document.getElementById('auth-activated-time').textContent = '激活时间：' + (data.activated_at || new Date().toLocaleString('zh-CN'));
+      document.getElementById('auth-success-overlay').style.display = 'flex';
+    }else{
+      errEl.textContent = data.message || '激活失败，请检查密钥是否正确';
+    }
+  }catch(e){
+    errEl.textContent = '网络错误，请稍后重试';
+  }
+}
+
+function authSuccessOk(){
+  document.getElementById('auth-success-overlay').style.display = 'none';
+  _deviceAuthChecked = false;
+  location.reload();
+}
+
+init();
+checkDeviceAuth();
+</script>
+</body>
+</html>
