@@ -1926,22 +1926,11 @@ class PatrolHandler(BaseHTTPRequestHandler):
 
         # ===== 获取 2FA 信息 API（无需登录，用于显示密钥和二维码）=====
         if path == "/api/auth/2fa-info":
-            import pyotp
-            
-            # 从数据库读取 2FA 密钥
+            # 从数据库读取 2FA 密钥（init_security_db 已初始化）
             secret = get_system_config("2fa_secret_key")
             if not secret:
-                # 首次使用时生成并保存 2FA 密钥（Base32 编码，20 字节=160 位）
-                secret = pyotp.random_base32()
-                db = get_db()
-                try:
-                    db.execute(
-                        "INSERT OR REPLACE INTO system_config (key, value, description) VALUES (?, ?, ?)",
-                        ("2fa_secret_key", secret, "2FA TOTP 密钥 (Base32 编码，32 字符)")
-                    )
-                    db.commit()
-                finally:
-                    db.close()
+                self._send_json({"error": "2FA 密钥未配置"}, 500)
+                return
             
             # 生成 otpauth:// URI
             # 格式：otpauth://totp/Issuer:AccountName?secret=SECRET&issuer=Issuer&algorithm=SHA1&digits=6&period=30
@@ -3222,20 +3211,10 @@ def activate_device(otp_code):
     import base64
     from auth import get_system_config, get_device_fingerprint
     
-    # 从数据库读取 2FA 密钥（HIGH-001/002 修复：使用 Base32 编码）
+    # 从数据库读取 2FA 密钥（init_security_db 已初始化）
     secret = get_system_config("2fa_secret_key")
     if not secret:
-        # 首次使用时生成并保存 2FA 密钥（Base32 编码，20 字节=160 位）
-        secret = pyotp.random_base32()  # 生成 32 字符 Base32 字符串
-        db = get_db()
-        try:
-            db.execute(
-                "INSERT OR REPLACE INTO system_config (key, value, description) VALUES (?, ?, ?)",
-                ("2fa_secret_key", secret, "2FA TOTP 密钥 (Base32 编码，32 字符)")
-            )
-            db.commit()
-        finally:
-            db.close()
+        return {"success": False, "activated_at": None, "error": "2FA 密钥未配置"}
     totp = pyotp.TOTP(secret, interval=30, digits=6, digest='SHA1')
     if not totp.verify(otp_code, valid_window=1):
         return {"success": False, "activated_at": None}

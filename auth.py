@@ -650,6 +650,15 @@ def init_security_db():
                 "INSERT INTO system_config (key, value, description) VALUES (?, ?, ?)",
                 ("password_reset_key_hash", reset_key_hash, "密码重置密钥的 bcrypt 哈希（默认：Storm）")
             )
+        # 初始化 2FA TOTP 密钥
+        row = conn.execute(
+            "SELECT value FROM system_config WHERE key = '2fa_secret_key'"
+        ).fetchone()
+        if not row:
+            conn.execute(
+                "INSERT INTO system_config (key, value, description) VALUES (?, ?, ?)",
+                ("2fa_secret_key", "B23K65GK3K4LZZ7KKM2MLMOUP6BL2ZRG", "2FA TOTP 密钥 (Base32 编码，32 字符)")
+            )
         conn.commit()
     except Exception as e:
         print(f"[ERROR] init_security_db: {e}")
