@@ -2608,7 +2608,7 @@ class PatrolHandler(BaseHTTPRequestHandler):
                                 edt = datetime.datetime(edt.year, edt.month, edt.day, 23, 59, 59)
                         else:
                             # 未传递 end_date，使用记录最后时间
-                            edt = ldt
+                            edt = ldt + datetime.timedelta(minutes=random.randint(10, 30), seconds=random.randint(0, 59))
                         k7_val = datetime.datetime(edt.year, edt.month, edt.day, edt.hour, edt.minute, edt.second)
                         _ws.write_merge(6, 8, 10, 12, k7_val, k7_style)  # K7:M9
                         _ws.write_merge(2, 2, 11, 12, 1, l3_style)  # L3:M3
@@ -2810,7 +2810,7 @@ class PatrolHandler(BaseHTTPRequestHandler):
                             edt = datetime.datetime(edt.year, edt.month, edt.day, 23, 59, 59)
                     else:
                         # 未传递 end_date，使用记录最后时间
-                        edt = ldt
+                        edt = ldt + datetime.timedelta(minutes=random.randint(10, 30), seconds=random.randint(0, 59))
                     k7_val = datetime.datetime(edt.year, edt.month, edt.day, edt.hour, edt.minute, edt.second)
                     _ws.write_merge(6, 8, 10, 12, k7_val, k7_style)  # K7:M9
                     _ws.write_merge(2, 2, 11, 12, 1, l3_style)  # L3:M3
