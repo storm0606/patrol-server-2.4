@@ -63,6 +63,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, parse_qs
 
+# xls2pdf-converter: XLS → PDF 本地转换（替代旧 XTP 服务）
+from xls2pdf.converter import xls_to_pdf as xls2pdf_convert
+
 # Threading HTTPServer for concurrent request handling
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     """多线程 HTTP 服务器"""
@@ -2594,7 +2597,18 @@ class PatrolHandler(BaseHTTPRequestHandler):
                         ft = records[0].get('time', ''); lt = records[-1].get('time', '')
                         ds = ft.split(' ')[0]; de = lt.split(' ')[0]
                         ldt = datetime.datetime.strptime(lt, '%Y-%m-%d %H:%M:%S')
-                        edt = ldt + datetime.timedelta(minutes=random.randint(10, 30), seconds=random.randint(0, 59))
+                        if end_date:
+                            # 前端传递了结束日期，使用该日期的 23:59:59
+                            if len(end_date) > 10:
+                                # 完整时间格式
+                                edt = datetime.datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S')
+                            else:
+                                # 仅日期格式，使用当天 23:59:59
+                                edt = datetime.datetime.strptime(end_date, '%Y-%m-%d')
+                                edt = datetime.datetime(edt.year, edt.month, edt.day, 23, 59, 59)
+                        else:
+                            # 未传递 end_date，使用记录最后时间
+                            edt = ldt
                         k7_val = datetime.datetime(edt.year, edt.month, edt.day, edt.hour, edt.minute, edt.second)
                         _ws.write_merge(6, 8, 10, 12, k7_val, k7_style)  # K7:M9
                         _ws.write_merge(2, 2, 11, 12, 1, l3_style)  # L3:M3
@@ -2795,8 +2809,8 @@ class PatrolHandler(BaseHTTPRequestHandler):
                             edt = datetime.datetime.strptime(end_date, '%Y-%m-%d')
                             edt = datetime.datetime(edt.year, edt.month, edt.day, 23, 59, 59)
                     else:
-                        # 未传递 end_date，使用记录最后时间 + 随机偏移（原始行为）
-                        edt = ldt + datetime.timedelta(minutes=random.randint(10, 30), seconds=random.randint(0, 59))
+                        # 未传递 end_date，使用记录最后时间
+                        edt = ldt
                     k7_val = datetime.datetime(edt.year, edt.month, edt.day, edt.hour, edt.minute, edt.second)
                     _ws.write_merge(6, 8, 10, 12, k7_val, k7_style)  # K7:M9
                     _ws.write_merge(2, 2, 11, 12, 1, l3_style)  # L3:M3
@@ -2823,94 +2837,28 @@ class PatrolHandler(BaseHTTPRequestHandler):
                     _ws.write_merge(row0, row0, 9, 11, r.get('event', '合格'), data_style)
                     _ws.write(row0, 12, r.get('inspector', ''), data_style)
 
-                xls_buf = _io.BytesIO(); _wb.save(xls_buf); xls_buf.seek(0)
-                xls_bytes = xls_buf.read()
+                # 保存到临时 XLS 文件（xls2pdf-converter 需要文件路径输入）
+                import tempfile
+                fd_xls, tmp_xls_path = tempfile.mkstemp(suffix='.xls')
+                os.close(fd_xls)
+                _wb.save(tmp_xls_path)
 
-                # 步骤 3: 使用 reportlab 直接生成 PDF（无需 LibreOffice）
-                from reportlab.lib import colors
-                from reportlab.lib.pagesizes import A4, landscape
-                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-                from reportlab.pdfbase import pdfmetrics
-                from reportlab.pdfbase.ttfonts import TTFont
-                from reportlab.lib.units import cm
-                
-                # 创建 PDF 缓冲区
-                import io as pdf_io
-                pdf_buffer = pdf_io.BytesIO()
-                
-                # 创建 PDF 文档（横向 A4）
-                doc = SimpleDocTemplate(
-                    pdf_buffer,
-                    pagesize=landscape(A4),
-                    rightMargin=1*cm,
-                    leftMargin=1*cm,
-                    topMargin=1*cm,
-                    bottomMargin=1*cm
-                )
-                
-                elements = []
-                styles = getSampleStyleSheet()
-                
-                # 标题
-                title_style = ParagraphStyle(
-                    name='Title',
-                    parent=styles['Heading1'],
-                    fontSize=18,
-                    alignment=1,  # 居中
-                    spaceAfter=12
-                )
-                elements.append(Paragraph(f"巡更记录 - {date_str}", title_style))
-                elements.append(Spacer(1, 0.3*cm))
-                
-                # 表格数据
-                # 表头
-                table_data = [[
-                    '序号',
-                    '点位名称',
-                    '巡更时间',
-                    '设备 ID',
-                    '事件',
-                    '巡更员'
-                ]]
-                
-                # 数据行
-                for i, r in enumerate(records):
-                    table_data.append([
-                        str(i + 1),
-                        r.get('point', r.get('point_name', '')),
-                        r.get('time', r.get('patrol_time', '')),
-                        r.get('device', r.get('device_id', '')),
-                        r.get('event', '合格'),
-                        r.get('inspector', '')
-                    ])
-                
-                # 创建表格
-                table = Table(table_data, colWidths=[1.2*cm, 3.5*cm, 3.5*cm, 3*cm, 2.5*cm, 3*cm])
-                
-                # 表格样式
-                table.setStyle(TableStyle([
-                    # 背景色
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#00b894')),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                    # 对齐
-                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    # 边框
-                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                    ('LINEBELOW', (0, 0), (-1, 0), 2, colors.black),
-                    # 字体大小
-                    ('FONTSIZE', (0, 0), (-1, -1), 10),
-                    # 行背景色交替
-                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
-                    ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#e9ecef')),
-                ]))
-                
-                elements.append(table)
-                
-                # 构建 PDF
-                doc.build(elements)
-                pdf_bytes = pdf_buffer.getvalue()
+                try:
+                    # 步骤 2: 使用 xls2pdf-converter 转换为 PDF
+                    fd_pdf, tmp_pdf_path = tempfile.mkstemp(suffix='.pdf')
+                    os.close(fd_pdf)
+                    try:
+                        xls2pdf_convert(tmp_xls_path, tmp_pdf_path)
+                        with open(tmp_pdf_path, 'rb') as pf:
+                            pdf_bytes = pf.read()
+                        print(f"[PDF] PDF 导出完成，体积: {len(pdf_bytes) / 1024:.1f} KB")
+                    finally:
+                        if os.path.exists(tmp_pdf_path):
+                            os.unlink(tmp_pdf_path)
+                finally:
+                    # 清理临时 XLS 文件
+                    if os.path.exists(tmp_xls_path):
+                        os.unlink(tmp_xls_path)
                 
                 # 存储到临时存储
                 with _export_store_lock:
