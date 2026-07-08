@@ -2565,18 +2565,7 @@ class PatrolHandler(BaseHTTPRequestHandler):
                         ft = records[0].get('time', ''); lt = records[-1].get('time', '')
                         ds = ft.split(' ')[0]; de = lt.split(' ')[0]
                         ldt = datetime.datetime.strptime(lt, '%Y-%m-%d %H:%M:%S')
-                        if end_date:
-                            # 前端传递了结束日期，使用该日期的 23:59:59
-                            if len(end_date) > 10:
-                                # 完整时间格式
-                                edt = datetime.datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S')
-                            else:
-                                # 仅日期格式，使用当天 23:59:59
-                                edt = datetime.datetime.strptime(end_date, '%Y-%m-%d')
-                                edt = datetime.datetime(edt.year, edt.month, edt.day, 23, 59, 59)
-                        else:
-                            # 未传递 end_date，使用记录最后时间
-                            edt = ldt + datetime.timedelta(minutes=random.randint(10, 30), seconds=random.randint(0, 59))
+                        edt = ldt + datetime.timedelta(minutes=random.randint(10, 30), seconds=random.randint(0, 59))
                         k7_val = datetime.datetime(edt.year, edt.month, edt.day, edt.hour, edt.minute, edt.second)
                         _ws.write_merge(6, 8, 10, 12, k7_val, k7_style)  # K7:M9
                         _ws.write_merge(2, 2, 11, 12, 1, l3_style)  # L3:M3
@@ -2767,18 +2756,7 @@ class PatrolHandler(BaseHTTPRequestHandler):
                     ldt = datetime.datetime.strptime(lt, '%Y-%m-%d %H:%M:%S')
                     # 恢复灵活时间范围支持：使用前端传递的 end_date 或记录中的最后时间
                     # 如果前端传递了 end_date，则使用该时间的 23:59:59；否则使用记录最后时间的合理扩展
-                    if end_date:
-                        # 前端传递了结束日期，使用该日期的 23:59:59
-                        if len(end_date) > 10:
-                            # 完整时间格式
-                            edt = datetime.datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S')
-                        else:
-                            # 仅日期格式，使用当天 23:59:59
-                            edt = datetime.datetime.strptime(end_date, '%Y-%m-%d')
-                            edt = datetime.datetime(edt.year, edt.month, edt.day, 23, 59, 59)
-                    else:
-                        # 未传递 end_date，使用记录最后时间
-                        edt = ldt + datetime.timedelta(minutes=random.randint(10, 30), seconds=random.randint(0, 59))
+                    edt = ldt + datetime.timedelta(minutes=random.randint(10, 30), seconds=random.randint(0, 59))
                     k7_val = datetime.datetime(edt.year, edt.month, edt.day, edt.hour, edt.minute, edt.second)
                     _ws.write_merge(6, 8, 10, 12, k7_val, k7_style)  # K7:M9
                     _ws.write_merge(2, 2, 11, 12, 1, l3_style)  # L3:M3
@@ -3187,7 +3165,6 @@ def activate_device(otp_code):
         dict: {success: bool, activated_at: str, fingerprint: str, error: str (optional)}
     """
     import pyotp
-    import base64
     from auth import get_system_config, get_device_fingerprint
     
     # 从数据库读取 2FA 密钥（init_security_db 已初始化）
@@ -3259,13 +3236,9 @@ def run_server(port=28891):
         log_error(f"run_server: 设备指纹={fingerprint}")
     
     if not authorized:
-        print("❌ 当前设备未授权！请通过 /api/auth/activate 接口激活")
-        if fingerprint:
-            print(f"   设备指纹：{fingerprint}")
+        pass  # [X] 当前设备未授权！请通过 /api/auth/activate 接口激活
     else:
-        print(f"🔒 设备授权通过")
-        if fingerprint:
-            print(f"   设备指纹：{fingerprint}")
+        pass  # [OK] 设备授权通过
     # [SECURITY] 初始化系统安全配置（首次启动时创建默认配置）
     from auth import init_security_db, get_system_config, check_admin_op_password
     init_security_db()
