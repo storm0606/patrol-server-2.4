@@ -421,20 +421,18 @@ def init_db():
     
     # [v2.4 简化] device_activations 表（仅设备指纹，移除 mac_address）
     table_exists = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='mac_activations'").fetchone()
-    
-    # 如果旧表存在，先删除后重建（简化结构）
     if table_exists:
-        print("[INIT] 重建 mac_activations → device_activations 表（仅设备指纹）...")
-        db.execute("DROP TABLE IF EXISTS mac_activations")
-    
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS mac_activations (
-            device_fingerprint TEXT UNIQUE NOT NULL,
-            activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    db.execute("CREATE INDEX IF NOT EXISTS idx_device_fp ON mac_activations(device_fingerprint)")
-    print("[INIT] device_activations 表已就绪（仅设备指纹鉴权）")
+        # 迁移旧表数据到新表
+        db.execute("ALTER TABLE mac_activations RENAME TO device_activations")
+    table_exists_new = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='device_activations'").fetchone()
+    if not table_exists_new:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS device_activations (
+                device_fingerprint TEXT UNIQUE NOT NULL,
+                activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_device_fp ON device_activations(device_fingerprint)")
     
     db.commit()
     # 添加标签字段 (SQLite 支持 ALTER TABLE ADD COLUMN)
@@ -1924,26 +1922,7 @@ class PatrolHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # ===== 获取 2FA 信息 API（无需登录，用于显示密钥和二维码）=====
-        if path == "/api/auth/2fa-info":
-            # 从数据库读取 2FA 密钥（init_security_db 已初始化）
-            secret = get_system_config("2fa_secret_key")
-            if not secret:
-                self._send_json({"error": "2FA 密钥未配置"}, 500)
-                return
-            
-            # 生成 otpauth:// URI
-            # 格式：otpauth://totp/Issuer:AccountName?secret=SECRET&issuer=Issuer&algorithm=SHA1&digits=6&period=30
-            issuer = "PatrolSystem"
-            account_name = "admin"
-            otpauth_uri = f"otpauth://totp/{issuer}:{account_name}?secret={secret}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
-            
-            self._send_json({
-                "success": True,
-                "secret_key": secret,
-                "otpauth_uri": otpauth_uri
-            })
-            return
+        # [REMOVED] /api/auth/2fa-info - 不再暴露 2FA 密钥
 
         # ===== 其他 GET API 需要鉴权 =====
         # LOW-007: 使用提取的 _check_auth 方法，避免重复鉴权逻辑
@@ -3165,7 +3144,7 @@ def is_device_authorized():
     
     授权检查逻辑：
     1. 生成 device_fingerprint
-    2. 在 mac_activations 表中匹配是否存在
+    2. 在 device_activations 表中匹配是否存在
     
     Returns:
         bool: 设备是否已授权
@@ -3179,7 +3158,7 @@ def is_device_authorized():
             fingerprint = get_device_fingerprint()
             if fingerprint:
                 row = db.execute(
-                    "SELECT 1 FROM mac_activations WHERE device_fingerprint = ?",
+                    "SELECT 1 FROM device_activations WHERE device_fingerprint = ?",
                     (fingerprint,)
                 ).fetchone()
                 if row is not None:
@@ -3235,14 +3214,14 @@ def activate_device(otp_code):
     try:
         # 仅存储设备指纹
         db.execute(
-            "INSERT OR IGNORE INTO mac_activations (device_fingerprint, activated_at) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO device_activations (device_fingerprint, activated_at) VALUES (?, ?)",
             (fingerprint, now)
         )
         db.commit()
         
         # 返回激活信息
         row = db.execute(
-            "SELECT activated_at FROM mac_activations WHERE device_fingerprint = ?",
+            "SELECT activated_at FROM device_activations WHERE device_fingerprint = ?",
             (fingerprint,)
         ).fetchone()
         activated_at = row["activated_at"] if row else now

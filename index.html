@@ -176,35 +176,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 </div>
 <!-- 2FA 输入对话框 -->
 <div id="auth-2fa-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10002;justify-content:center;align-items:center">
-  <div style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:16px;padding:40px;text-align:center;max-width:450px;width:90%">
+  <div style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:16px;padding:40px;text-align:center;max-width:400px;width:90%">
     <div style="font-size:3em;margin-bottom:16px">🔑</div>
-    <h2 style="color:#00cec9;margin-bottom:8px">配置 Authenticator</h2>
-    <p style="color:#b2bec3;font-size:0.85em;margin-bottom:16px">请使用 Authenticator 应用扫描二维码或手动输入密钥：</p>
-    
-    <!-- 二维码区域 -->
-    <div id="auth-qr-container" style="background:#fff;padding:16px;border-radius:12px;display:inline-block;margin-bottom:16px">
-      <div id="auth-qrcode"></div>
-    </div>
-    
-    <!-- 密钥显示区域 -->
-    <div style="background:#0f0f1a;border:1px solid #2a2a4a;border-radius:8px;padding:12px;margin-bottom:16px">
-      <div style="color:#888;font-size:0.8em;margin-bottom:6px">密钥 (Key):</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="text" id="auth-secret-key" readonly style="flex:1;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#00cec9;font-size:14px;font-family:monospace;letter-spacing:2px;text-align:center" value="加载中...">
-        <button onclick="authCopySecret()" style="background:#00cec9;color:#0a0a1a;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-size:13px;font-weight:bold">复制</button>
-      </div>
-    </div>
-    
-    <div style="color:#fdcb6e;font-size:0.8em;margin-bottom:16px">⏱ 密钥有效期：30 秒</div>
-    
-    <div style="border-top:1px solid #2a2a4a;padding-top:16px;margin-top:16px">
-      <p style="color:#888;font-size:0.85em;margin-bottom:12px">配置完成后，输入 6 位动态密钥激活：</p>
-      <input type="text" id="auth-2fa-code" maxlength="6" placeholder="000000" style="width:100%;padding:14px 16px;border-radius:8px;border:1px solid #2a2a4a;background:#0f0f1a;color:#00cec9;font-size:24px;text-align:center;letter-spacing:8px;font-weight:bold;outline:none;font-family:monospace" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)" onkeydown="if(event.key==='Enter')authActivate()">
-      <div id="auth-2fa-error" style="color:#e17055;font-size:0.85em;margin-top:12px;min-height:20px"></div>
-    </div>
-    
+    <h2 style="color:#00cec9;margin-bottom:8px">输入授权码</h2>
+    <p style="color:#b2bec3;font-size:0.85em;margin-bottom:24px">请使用 Authenticator 应用输入 6 位动态授权码：</p>
+    <input type="text" id="auth-2fa-code" maxlength="6" placeholder="000000" style="width:100%;padding:14px 16px;border-radius:8px;border:1px solid #2a2a4a;background:#0f0f1a;color:#00cec9;font-size:24px;text-align:center;letter-spacing:8px;font-weight:bold;outline:none;font-family:monospace" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)" onkeydown="if(event.key==='Enter')authActivate()">
+    <div id="auth-2fa-error" style="color:#e17055;font-size:0.85em;margin-top:12px;min-height:20px"></div>
     <div style="display:flex;gap:12px;justify-content:center;margin-top:16px">
-      <button onclick="authCancel2FA()" style="flex:1;padding:12px 20px;border-radius:8px;border:none;background:#636e72;color:#fff;font-size:14px;cursor:pointer">取消</button>
+      <button onclick="authAbandon()" style="flex:1;padding:12px 20px;border-radius:8px;border:none;background:#636e72;color:#fff;font-size:14px;cursor:pointer">放弃</button>
       <button onclick="authActivate()" style="flex:1;padding:12px 20px;border-radius:8px;border:none;background:#00cec9;color:#0a0a1a;font-size:14px;font-weight:bold;cursor:pointer">激活授权</button>
     </div>
   </div>
@@ -1793,56 +1772,14 @@ function authShow2FA(){
   document.getElementById('auth-unauthorized-overlay').style.display = 'none';
   document.getElementById('auth-2fa-code').value = '';
   document.getElementById('auth-2fa-error').textContent = '';
-  document.getElementById('auth-secret-key').value = '加载中...';
-  document.getElementById('auth-qrcode').innerHTML = '';
   document.getElementById('auth-2fa-overlay').style.display = 'flex';
-  
-  // 加载 2FA 信息
-  authLoad2FAInfo();
   
   setTimeout(()=>document.getElementById('auth-2fa-code').focus(), 100);
 }
 
-// 加载 2FA 信息并生成二维码
-async function authLoad2FAInfo(){
-  try{
-    const resp = await authFetch('/api/auth/2fa-info', {method: 'GET'});
-    const data = await resp.json();
-    if(data.success){
-      // 显示密钥
-      document.getElementById('auth-secret-key').value = data.secret_key;
-      // 生成二维码
-      setTimeout(() => {
-        new QRCode(document.getElementById('auth-qrcode'), {
-          text: data.otpauth_uri,
-          width: 180,
-          height: 180,
-          colorDark : '#000000',
-          colorLight : '#ffffff',
-          correctLevel : QRCode.CorrectLevel.M
-        });
-      }, 100);
-    }else{
-      document.getElementById('auth-secret-key').value = '加载失败';
-    }
-  }catch(e){
-    console.error('加载 2FA 信息失败:', e);
-    document.getElementById('auth-secret-key').value = '加载失败';
-  }
-}
-
-// 复制密钥到剪贴板
-function authCopySecret(){
-  const secretKey = document.getElementById('auth-secret-key');
-  secretKey.select();
-  document.execCommand('copy');
-  showToast('密钥已复制到剪贴板');
-}
-
-function authCancel2FA(){
-  document.getElementById('auth-2fa-overlay').style.display = 'none';
-  document.getElementById('auth-unauthorized-overlay').style.display = 'flex';
-}
+// [REMOVED] authLoad2FAInfo - 不再需要加载 2FA 信息（使用固定密钥）
+// [REMOVED] authCopySecret - 不再需要复制密钥功能
+// [REMOVED] authCancel2FA - 不再需要取消功能，直接使用 authAbandon()
 
 async function authActivate(){
   const code = document.getElementById('auth-2fa-code').value.trim();
