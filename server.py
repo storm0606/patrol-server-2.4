@@ -2651,10 +2651,9 @@ class PatrolHandler(BaseHTTPRequestHandler):
             # 生成 token (LOW-012: 使用 secrets 模块生成安全随机 token)
             token = f"export_{int(time.time()*1000)}_{secrets.token_urlsafe(16)}"
             # 优先使用原文件名，否则使用默认名称
+            # 注意：前端已去除扩展名，后端直接拼接 .pdf，避免 os.path.splitext 误截文件名中的点号（如 "12.9" → "12"）
             if original_filename:
-                # 去除原文件扩展名
-                base_name = os.path.splitext(original_filename)[0]
-                filename = f"{base_name}.pdf"
+                filename = f"{original_filename}.pdf"
             else:
                 filename = "patrol_records.pdf"
             mime = "application/pdf"
