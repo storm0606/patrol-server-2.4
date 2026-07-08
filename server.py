@@ -3257,11 +3257,10 @@ def run_server(port=28891):
     log_error("run_server: 调用 db_get_stats()...")
     stats = db_get_stats()
     log_error(f"run_server: db_get_stats 返回 {stats}")
-    print(f"🛡️ 巡更记录管理系统 2.1 启动于 http://0.0.0.0:{port}")
-    print(f"📊 数据库:{stats['total_records']} 条记录")
+    print(f"🛡️ 巡更记录管理系统 2.4 启动于 http://0.0.0.0:{port}")
     from auth import is_auth_enabled
     if is_auth_enabled():
-        print(f"🔑 密码保护已启用")
+        pass
     log_error("run_server: 准备自动打开浏览器...")
     # 自动打开默认浏览器
     import webbrowser
