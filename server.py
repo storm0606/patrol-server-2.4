@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""巡更记录管理系统 2.4 - Patrol Record Management System
+"""巡更记录管理系统 - Patrol Record Management System
 轮次定义:第二轮 03:00-05:00 第三轮05:00-07:00,第四轮07:00-09:00,第五轮09:00-11:00,第六轮11:00-13:00,第七轮13:00-15:00,第八轮15:00-17:00,第九轮17:00-19:00,第十轮19:00-21:00,第十一轮21:00-23:00,第十二轮23:00-24:00
 每行数据=一次打点
 """
@@ -65,6 +65,9 @@ from urllib.parse import urlparse, parse_qs
 
 # xls2pdf-converter: XLS → PDF 本地转换（替代旧 XTP 服务）
 from xls2pdf.converter import xls_to_pdf as xls2pdf_convert
+
+# 应用版本号常量
+APP_VERSION = "2.4"
 
 # Threading HTTPServer for concurrent request handling
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
@@ -1880,11 +1883,16 @@ class PatrolHandler(BaseHTTPRequestHandler):
             self.wfile.write(body_bytes)
             return
 
-        # ===== 公开 API(无需鉴权)=====
+        # ===== 公开 API(无需鉴权)====
         if path == "/api/round-ranges":
             # 返回轮次时间范围定义,供前端动态引用
             round_ranges = {str(k): {"start": v[0], "end": v[1], "label": f"第{k}轮 ({v[0]}:00-{v[1]}:00)"} for k, v in ROUND_TIME_RANGES.items()}
             self._send_json({"round_ranges": round_ranges, "total_rounds": len(ROUND_TIME_RANGES)})
+            return
+
+        # ===== 版本号 API =====
+        if path == "/api/version":
+            self._send_json({"version": APP_VERSION})
             return
 
         if path == "/api/auth/check-device":
@@ -3257,7 +3265,7 @@ def run_server(port=28891):
     log_error("run_server: 调用 db_get_stats()...")
     stats = db_get_stats()
     log_error(f"run_server: db_get_stats 返回 {stats}")
-    print(f"🛡️ 巡更记录管理系统 2.4 启动于 http://0.0.0.0:{port}")
+    print(f"🛡️ 巡更记录管理系统 {APP_VERSION} 启动于 http://0.0.0.0:{port}")
     from auth import is_auth_enabled
     if is_auth_enabled():
         pass
