@@ -116,15 +116,7 @@ del _STARTUP_LOGS
 _export_store = {}
 _export_store_lock = threading.Lock()
 
-DEFAULT_POINTS = [
-    # LOW-004: 硬编码默认点位 - 这些是系统初始化时的默认巡更点位
-    # 当数据库中没有点位时，使用这些默认值
-    "B 端办公区东大门", "消防通道内", "D 口通道", "D 口卷帘门",
-    "C 口楼梯", "C 口直梯", "C 口卷帘门", "票亭", "B 口安检", "B 口",
-    "B 口卷帘门", "A 端办公区西大门", "A 端办公区东大门", "A 口卷帘门",
-    "上行头", "上行尾", "下行头", "下行尾", "站台卫生间", "B 端办公区西大门",
-    "站厅直梯", "站厅付费区", "A 端非付费区"
-]
+
 # 轮次映射:round_number -> hour (第一轮00:00-03:00,第二轮 03:00-05:00,第三轮05:00-07:00,第四轮07:00-09:00,第五轮09:00-11:00,第六轮11:00-13:00,第七轮13:00-15:00,第八轮15:00-17:00,第九轮17:00-19:00,第十轮19:00-21:00,第十一轮21:00-23:00,第十二轮23:00-24:00)
 # 轮次时间映射:round_number -> (start_hour, end_hour)
 ROUND_TIME_RANGES = {
@@ -458,8 +450,7 @@ def init_db():
     try:
         db.execute("INSERT OR IGNORE INTO schema_version (version, description) VALUES (25, 'v2.4 - 移除 MAC 地址鉴权，仅保留设备指纹鉴权')")
     except: pass
-    for i, name in enumerate(DEFAULT_POINTS):
-        db.execute("INSERT OR IGNORE INTO patrol_points (name, sort_order) VALUES (?, ?)", [name, i])
+
     db.commit()
     db.close()
 
@@ -519,7 +510,7 @@ def get_active_points():
             return [p["name"] for p in points]
     except Exception:
         pass
-    return DEFAULT_POINTS
+    return []
 
 def get_route_points(route_name="线路一"):
     """获取指定路线的点位列表(按路线中的顺序)"""
