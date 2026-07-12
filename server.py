@@ -1113,36 +1113,47 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
         p = ''.join(r["point"].split())
         point_counts[p] = point_counts.get(p, 0) + 1
 
-    # === 步骤 3: 识别已有数据的 L1 标签 ===
-    # [FIX 2026-06-22 #7] 使用''.join(p.split())去除所有空白字符
-    l1_with_data = set()
+    # === 步骤 3-4: 已合并到步骤 5 (2026-07-12) ===
+
+    # === 步骤 5: [FIX 2026-07-12] 按标签层级顺序构建补充列表 ===
+    # 规则:
+    #   1. 先补充已有但不足2条的点位(按原数据出现顺序),补充记录紧跟原数据后面
+    #   2. 再补充完全缺失的点位(按 L1 标签顺序分组, L1 组内按 L2 序号排序)
+    #   3. 该 L1 下所有 L2 点位齐全后,才进入下一个 L1 标签
+    fill_order = []  # [(point_name, tap_count), ...]
+
+    # === 第一阶段: 已有但不足的点位,按原数据出现顺序 ===
+    seen_in_data = []
     for r in round_records:
         p = ''.join(r["point"].split())
+        if p not in seen_in_data:
+            seen_in_data.append(p)
+    
+    for p in seen_in_data:
+        count = point_counts.get(p, 0)
+        if count < TAPS_PER_POINT:
+            need = TAPS_PER_POINT - count
+            fill_order.append((p, need))
+
+    # === 第二阶段: 完全缺失的点位,按 L1→L2 标签顺序 ===
+    # 收集已有数据的 L1 标签(按 L1 序号排序)
+    l1_with_data = set()
+    for p in seen_in_data:
         if p in point_labels:
             l1_with_data.add(point_labels[p]['label_l1'])
-
-    # === 步骤 4: 按 L1 序号排序 ===
-    l1_list = sorted(l1_with_data, key=lambda l1: next((pl['label_l1_order'] for pl in point_labels.values() if pl['label_l1'] == l1), 0))
-
-    # === 步骤 5: [FIX 2026-06-22 #6] 按路线顺序构建补充列表(移除 L1 标签分组逻辑)===
-    # 问题根因:原 L1 分组逻辑导致点位顺序混乱、tap_count 分配错误、产生 extra 记录
-    # 修复方案:直接按 route_points 顺序遍历,确定每个点位需要补充几条记录
-    fill_order = []  # [(point_name, tap_count), ...] 按路线顺序
-
-    # 获取路线点位顺序（已去除所有空白字符）
-    route_points_raw = get_route_points(route_name)
-    route_points = [''.join(p.split()) for p in route_points_raw]
-
-    # 按路线顺序遍历每个点位,确定需要补充的记录数
-    for point_name in route_points:
-        count = point_counts.get(point_name, 0)
-        if count == 0:
-            # 完全缺失:需要补充 2 条
-            fill_order.append((point_name, 2))
-        elif count == 1:
-            # 只有 1 条:需要补充 1 条
-            fill_order.append((point_name, 1))
-        # count >= 2: 已有足够记录,不补充
+    
+    # 收集这些 L1 下所有 L2 点位,排除已有数据的
+    missing_no_data = []  # [(point_name, label_l1, label_l1_order, label_l2_order), ...]
+    for l1 in l1_with_data:
+        for p, labels in point_labels.items():
+            if labels['label_l1'] == l1 and point_counts.get(p, 0) == 0:
+                missing_no_data.append((p, l1, labels['label_l1_order'], labels['label_l2_order']))
+    
+    # 按 L1 文本→L1 序号→L2 序号排序
+    missing_no_data.sort(key=lambda x: (x[1], x[2], x[3]))
+    
+    for mp in missing_no_data:
+        fill_order.append((mp[0], TAPS_PER_POINT))
 
 
     # === 步骤 6: [FIX 2026-06-22 #3] 用户要求:先补充点位,再根据点位补充时间 ===
@@ -1174,15 +1185,12 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
         pn_clean = ''.join(point_name.split())
         supplement_needed[pn_clean] = tap_count
 
-    # 按 route_points 顺序(正序)构建补充点位列表
+    # [FIX 2026-07-12] fill_order 已分两阶段排好,直接使用
     # 每个元素: (point_name, tap_count)
     points_to_supplement = []
-    for point_name in route_points:  # ✅ 正序遍历路线顺序
-        if point_name not in supplement_needed:
-            continue
-        tap_count = supplement_needed[point_name]
+    for point_name, tap_count in fill_order:
         points_to_supplement.append((point_name, tap_count))
-        print(f"[INFO] supplement_round_logic: 路线顺序将补充点位 '{point_name}' 共{tap_count}条")
+        print(f"[INFO] supplement_round_logic: 将补充点位 '{point_name}' 共{tap_count}条")
 
     # === 阶段 2: [FIX 2026-06-22] 重构时间插入逻辑 - 按时间缝隙插入补充记录 ===
     #
@@ -1233,47 +1241,61 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
                 "_order": len(supplement_placeholders)  # 保持补充点位内部的相对顺序
             })
 
-    # 2b. 构建路线点位顺序映射
-    point_order_map = {''.join(p.split()): i for i, p in enumerate(route_points)}
+    # 2b. [FIX 2026-07-12] 构建点位顺序映射
+    # 分两阶段: 有原数据的点位按出现顺序, 无原数据的点位按标签顺序
+    ordered_points = []
+    seen_pts = set()
+    # 第一阶段: 按原数据出现顺序
+    for p in seen_in_data:
+        if p not in seen_pts:
+            ordered_points.append(p)
+            seen_pts.add(p)
+    # 第二阶段: fill_order 中无原数据的点位(已按标签排序)
+    for point_name, _ in fill_order:
+        if point_name not in seen_pts:
+            ordered_points.append(point_name)
+            seen_pts.add(point_name)
+    point_order_map = {p: i for i, p in enumerate(ordered_points)}
 
     # 2c. 合并原记录和补充占位
     #
     # [时间缝隙插入逻辑]
-    # 构建合并列表时,按路线点位顺序遍历:
-    #   1. 取出该点位所有原记录(已按时间排序)
-    #   2. 取出该点位所有补充占位
-    #   3. 顺序排列为:每条原记录后跟其补充记录
+    # [FIX 2026-07-12] 分两阶段合并:
+    #   第一阶段: 有原数据的点位,每条原记录后紧跟其补充记录
+    #   第二阶段: 无原数据的点位,补充记录按标签顺序添加
+    #   合并顺序: 先按原数据时间顺序插入有原数据的点位及补充,
+    #             再追加无原数据点位的补充记录
     #
     merged_records = []
 
-    for pt_name in route_points:
-        pt_clean = ''.join(pt_name.split())
-        # 获取该点位所有原记录(按时间排序)
-        point_originals = [r for r in sorted_records if ''.join(r.get("point", "").split()) == pt_clean]
-        # 获取该点位所有补充占位
+    # 第一阶段: 按原数据时间顺序遍历,每条原记录后紧跟补充
+    for orig in sorted_records:
+        pt_clean = ''.join(orig.get("point", "").split())
+        merged_records.append(orig)
+        # 在原记录后插入该点位的补充(如果有)
         point_supplements = [s for s in supplement_placeholders if s["point"] == pt_clean]
+        # 只插入一条补充(如果该点位有多条补充,后面继续处理)
+        for supp in point_supplements:
+            if supp not in merged_records:
+                merged_records.append(supp)
+                break
 
-        if not point_originals:
-            # 该点位完全没有原记录:所有补充直接添加(稍后基于前一条已有记录计算时间)
-            merged_records.extend(point_supplements)
-        else:
-            # 该点位有原记录:在原记录之间和之后插入补充
-            # 策略:迭代原记录,每条原记录后尝试插入一条补充记录
-            supp_iter = iter(point_supplements)
-            for orig in point_originals:
-                merged_records.append(orig)
-                # 在原记录后插入一条补充(如果有剩余)
-                try:
-                    merged_records.append(next(supp_iter))
-                except StopIteration:
-                    pass
+    # 第一阶段补充: 如果某点位有多条补充记录(如 count=0 需2条),继续追加
+    for pt_name in seen_in_data:
+        pt_clean = ''.join(pt_name.split())
+        point_supplements = [s for s in supplement_placeholders if s["point"] == pt_clean]
+        already_merged = [s for s in merged_records if s.get("point") == pt_clean and s.get("source") == "supplemented"]
+        remaining = [s for s in point_supplements if s not in merged_records]
+        merged_records.extend(remaining)
 
-            # 如果还有剩余补充(在最后一条原记录之后),全部添加
-            try:
-                while True:
-                    merged_records.append(next(supp_iter))
-            except StopIteration:
-                pass
+    # 第二阶段: 无原数据的点位,按标签顺序追加补充记录
+    no_data_points = []
+    for point_name, _ in fill_order:
+        if point_name not in seen_in_data:
+            no_data_points.append(point_name)
+    for pt_name in no_data_points:
+        point_supplements = [s for s in supplement_placeholders if s["point"] == pt_name]
+        merged_records.extend(point_supplements)
 
     print(f"[DEBUG] 第{round_num}轮：合并后共{len(merged_records)}条记录 (原{len(sorted_records)}+补充{len(supplement_placeholders)})")
 
@@ -1423,6 +1445,10 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
     for r in result_records:
         if "point" in r and r["point"]:
             r["point"] = ''.join(r["point"].split())
+
+    # [FIX 2026-07-12] 按时间正序排列最终结果
+    # 补充记录的时间可能早于原数据(如无原数据的补充插入在 round_start~original_first_time 之间)
+    result_records.sort(key=lambda r: r.get("time", ""))
 
     print(f"[DEBUG] 第{round_num}轮：最终结果{len(result_records)}条记录")
 
