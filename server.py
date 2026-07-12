@@ -752,6 +752,7 @@ def get_route_detail(route_name):
 # === 全局常量 ===
 # LOW-005: 魔法数字 - 时间间隔常量 (单位：秒)
 TAPS_PER_POINT = 2  # 每个点位标准打点次数:2 次
+SUPPLEMENT_ORDER_MODE = 1  # 补充记录排列方案: 1=L2+1紧随已有, 2=L2-1在前L2+1在后
 
 # === 时间间隔常量 ===
 SAME_POINT_GAP_MIN = 10  # 同点位间隔最小值 (秒)
@@ -912,7 +913,7 @@ def review_round_data_std(round_records, round_num, points, date_str, route_name
         elif cnt == 1:
             missing.append((p_clean, 1))
     if missing:
-        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device)
+        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device, order_mode=SUPPLEMENT_ORDER_MODE)
     return round_records
 
 def review_round_data_std_plus_1(round_records, round_num, points, date_str, route_name="线路一", default_device=""):
@@ -931,7 +932,7 @@ def review_round_data_std_plus_1(round_records, round_num, points, date_str, rou
         elif cnt == 1:
             missing.append((p_clean, 1))
     if missing:
-        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device)
+        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device, order_mode=SUPPLEMENT_ORDER_MODE)
         point_counts = {}
         for r in round_records:
             p = r["point"].strip()
@@ -980,7 +981,7 @@ def review_round_data_std_plus_2(round_records, round_num, points, date_str, rou
         elif cnt == 1:
             missing.append((p_clean, 1))
     if missing:
-        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device)
+        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device, order_mode=SUPPLEMENT_ORDER_MODE)
         point_counts = {}
         for r in round_records:
             p = r["point"].strip()
@@ -1050,10 +1051,10 @@ def supplement_round_direct(round_records, round_num, points, date_str, route_na
         elif cnt == 1:
             missing.append((p_clean, 1))
     if missing:
-        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device)
+        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device, order_mode=SUPPLEMENT_ORDER_MODE)
     return round_records
 
-def supplement_round_logic(round_records, round_num, points, date_str, missing, route_name="线路一", default_device=""):
+def supplement_round_logic(round_records, round_num, points, date_str, missing, route_name="线路一", default_device="", order_mode=1):
     """
     补充算法核心逻辑 - 标签层级优先 (L1→L2 循环填充)
 
@@ -1156,20 +1157,19 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
         fill_order.append((mp[0], TAPS_PER_POINT))
 
 
-    # === 步骤 6: [FIX 2026-06-22 #3] 用户要求:先补充点位,再根据点位补充时间 ===
-    # 原逻辑问题:按原记录顺序遍历,导致补充记录时间不正序
-    # 修复方案:按 fill_order 顺序生成所有补充记录,使用全局 prev_time 分配时间
+    # === 步骤 6: [FIX 2026-07-13] 按最终排列顺序统一分配时间 ===
+    # 核心思路: 先按用户指定的排列规则确定所有记录(原数据+补充)的顺序,
+    # 然后统一分配递增时间,确保 result_records.sort(key=time) 后得到期望顺序
     # 1. 先将原记录按时间排序保留
     sorted_records = sorted(round_records, key=lambda r: r["time"])
 
-    # 2. 找到最后一条已有记录的时间 (用于补充记录的基准时间)
+    # 2. 获取原数据的时间范围
     existing_times = [datetime.datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S") for r in round_records]
     # [FIX 2026-06-22] 当轮次无原数据时,使用 round_start 作为基准时间
-    # [FIX 2026-06-22 #4] 当原数据时间超出 round_end 时(如测试数据插入到错误轮次),视为该轮无有效原数据,使用 round_start
+    # [FIX 2026-06-22 #4] 当原数据时间超出 round_end 时,视为该轮无有效原数据,使用 round_start
     if existing_times:
         max_existing = max(existing_times)
         if max_existing > round_end:
-            # 原数据时间超出轮次窗口,视为无效原数据,使用 round_start
             last_existing_time = round_start
         else:
             last_existing_time = max_existing
@@ -1185,143 +1185,156 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
         pn_clean = ''.join(point_name.split())
         supplement_needed[pn_clean] = tap_count
 
-    # [FIX 2026-07-12] fill_order 已分两阶段排好,直接使用
-    # 每个元素: (point_name, tap_count)
-    points_to_supplement = []
-    for point_name, tap_count in fill_order:
-        points_to_supplement.append((point_name, tap_count))
-        print(f"[INFO] supplement_round_logic: 将补充点位 '{point_name}' 共{tap_count}条")
+    # ================================================================
+    # [FIX 2026-07-13] 重构合并与时间分配逻辑
+    # 核心改动: 先按排列规则确定所有记录的最终顺序, 再统一分配时间
+    # 支持两种排列方案:
+    #   方案1(SUPPLEMENT_ORDER_MODE=1): 已有点位锚定, L2+1紧随其后, 其余缺失按L2序号
+    #   方案2(SUPPLEMENT_ORDER_MODE=2): 已有点位锚定, L2-1在前L2+1在后, 其余缺失按L2序号
+    # ================================================================
 
-    # === 阶段 2: [FIX 2026-06-22] 重构时间插入逻辑 - 按时间缝隙插入补充记录 ===
-    #
-    # 问题根因:原逻辑使用 point_max_times 独立计算每个点位的补充时间,
-    # 导致补充记录的时间与原数据的时间不连续,无法正确插入到时间缝隙中。
-    #
-    # 修复方案:
-    #   1. 构建合并记录列表:原数据记录(按时间正序) + 补充点位占位(按路线顺序)
-    #   2. 按 (路线顺序索引, 时间) 排序,实现原数据与补充点位交替排列
-    #   3. 按顺序遍历:原数据记录保持原时间不变;
-    #      补充记录基于前一条记录(可能是原数据或补充记录)按间隔规则计算时间
-    #
-    # 间隔规则:
-    #   - 同点位(与前一条记录点位相同):10-40 秒
-    #   - 异点位(与前一条记录点位不同):40-90 秒
-    #
-    # 铁律约束:原数据(source="user")的时间和点位绝对不能修改
-    #
-
-    # 2a. 创建补充点位占位记录 (时间占位 None，稍后分配)
-    # [FIX 2026-07-01] device 字段继承修复：如果该点位无原记录，从同轮其他点位获取 device
-    # 获取同轮所有记录中有 device 的值作为 fallback
+    # --- 6a: 创建补充占位记录 ---
     all_devices_in_round = [r.get("device", "") for r in sorted_records if r.get("device", "")]
     fallback_device = all_devices_in_round[0] if all_devices_in_round else default_device
-    
+
     supplement_placeholders = []
-    for point_name, tap_count in points_to_supplement:
+    for point_name, tap_count in fill_order:
         pt_clean = ''.join(point_name.split())
-        # 从该点位的原记录中获取 device 值 (取第一条原记录的 device)
         point_orig_records = [r for r in sorted_records if ''.join(r.get("point", "").split()) == pt_clean]
-        if point_orig_records:
-            device_value = point_orig_records[0].get("device", "")
-        else:
-            # 该点位无原记录:从同轮其他点位继承 device
-            device_value = fallback_device
+        device_value = point_orig_records[0].get("device", "") if point_orig_records else fallback_device
         print(f"[DEBUG] 补充点位 '{point_name}': 原记录数={len(point_orig_records)}, device='{device_value}'", flush=True)
         for tap_idx in range(tap_count):
             supplement_placeholders.append({
                 "seq": 0,
                 "point": pt_clean,
-                "time": None,  # 占位，稍后分配具体时间
+                "time": None,
                 "device": device_value,
                 "event": "合格",
                 "inspector": "",
                 "route": route_name,
                 "round": round_num,
                 "source": "supplemented",
-                "_order": len(supplement_placeholders)  # 保持补充点位内部的相对顺序
             })
+        print(f"[INFO] supplement_round_logic: 将补充点位 '{point_name}' 共{tap_count}条")
 
-    # 2b. [FIX 2026-07-12] 构建点位顺序映射
-    # 分两阶段: 有原数据的点位按出现顺序, 无原数据的点位按标签顺序
-    ordered_points = []
-    seen_pts = set()
-    # 第一阶段: 按原数据出现顺序
+    # --- 6b: 按排列方案构建最终点位顺序 ---
+    # seen_in_data: 按原数据出现顺序的已有点位列表
+    # point_labels: {point_name: {label_l1, label_l1_order, label_l2, label_l2_order}}
+    # supplement_needed: {point_name: tap_count}
+
+    # 收集同L1下所有L2点位, 按L2序号排序
+    l1_groups = {}  # {l1_label: [(point_name, l2_order), ...]}
+    for p, labels in point_labels.items():
+        l1 = labels['label_l1']
+        if l1 not in l1_groups:
+            l1_groups[l1] = []
+        l1_groups[l1].append((p, labels['label_l2_order']))
+    for l1 in l1_groups:
+        l1_groups[l1].sort(key=lambda x: x[1])
+
+    # 为seen_in_data中的每个点位建立L2序号映射
+    seen_l2_orders = {}  # {point_name: l2_order}
     for p in seen_in_data:
-        if p not in seen_pts:
-            ordered_points.append(p)
-            seen_pts.add(p)
-    # 第二阶段: fill_order 中无原数据的点位(已按标签排序)
-    for point_name, _ in fill_order:
-        if point_name not in seen_pts:
-            ordered_points.append(point_name)
-            seen_pts.add(point_name)
-    point_order_map = {p: i for i, p in enumerate(ordered_points)}
+        if p in point_labels:
+            seen_l2_orders[p] = point_labels[p]['label_l2_order']
 
-    # 2c. 合并原记录和补充占位
-    #
-    # [时间缝隙插入逻辑]
-    # [FIX 2026-07-12] 分两阶段合并:
-    #   第一阶段: 有原数据的点位,每条原记录后紧跟其补充记录
-    #   第二阶段: 无原数据的点位,补充记录按标签顺序添加
-    #   合并顺序: 先按原数据时间顺序插入有原数据的点位及补充,
-    #             再追加无原数据点位的补充记录
-    #
+    # L1序号映射(用于排序)
+    l1_order_map = {}
+    for p, labels in point_labels.items():
+        l1 = labels['label_l1']
+        l1_order_map[l1] = labels['label_l1_order']
+
+    # 构建最终点位排列顺序
+    final_point_order = []
+    placed = set()
+
+    if order_mode == 1:
+        # === 方案1: 按原数据出现顺序遍历已有, L2+1紧随, 间隙填L2<=下一已有的缺失 ===
+        for idx, p in enumerate(seen_in_data):
+            l2o = seen_l2_orders.get(p, 0)
+            if p not in placed:
+                final_point_order.append(p)
+                placed.add(p)
+            # L2+1紧随
+            for cand, cl2 in l1_groups.get(point_labels[p]['label_l1'], []):
+                if cl2 == l2o + 1 and cand not in seen_in_data and cand not in placed:
+                    final_point_order.append(cand)
+                    placed.add(cand)
+                    break
+            # 填入L2<=下一个已有L2序号且未放置的缺失点位
+            next_l2 = seen_l2_orders.get(seen_in_data[idx + 1], 999) if idx + 1 < len(seen_in_data) else 999
+            for l1 in sorted(l1_groups.keys(), key=lambda x: l1_order_map.get(x, 0)):
+                for cand, cl2 in l1_groups[l1]:
+                    if cand not in placed and cand not in seen_in_data and cl2 <= next_l2:
+                        final_point_order.append(cand)
+                        placed.add(cand)
+        # 末尾剩余
+        for l1 in sorted(l1_groups.keys(), key=lambda x: l1_order_map.get(x, 0)):
+            for cand, _ in l1_groups[l1]:
+                if cand not in placed:
+                    final_point_order.append(cand)
+                    placed.add(cand)
+
+    elif order_mode == 2:
+        # === 方案2: 按原数据出现顺序遍历, L2-1在前L2+1在后, 间隙填L2<=下一已有的缺失 ===
+        for idx, p in enumerate(seen_in_data):
+            l2o = seen_l2_orders.get(p, 0)
+            l1_pts = l1_groups.get(point_labels[p]['label_l1'], [])
+            # L2-1排在P前面
+            for cand, cl2 in l1_pts:
+                if cl2 == l2o - 1 and cand not in seen_in_data and cand not in placed:
+                    final_point_order.append(cand)
+                    placed.add(cand)
+                    break
+            # 输出P
+            if p not in placed:
+                final_point_order.append(p)
+                placed.add(p)
+            # L2+1紧随P后
+            for cand, cl2 in l1_pts:
+                if cl2 == l2o + 1 and cand not in seen_in_data and cand not in placed:
+                    final_point_order.append(cand)
+                    placed.add(cand)
+                    break
+            # 填入L2<=下一个已有L2序号且未放置的缺失点位
+            next_l2 = seen_l2_orders.get(seen_in_data[idx + 1], 999) if idx + 1 < len(seen_in_data) else 999
+            for l1 in sorted(l1_groups.keys(), key=lambda x: l1_order_map.get(x, 0)):
+                for cand, cl2 in l1_groups[l1]:
+                    if cand not in placed and cand not in seen_in_data and cl2 <= next_l2:
+                        final_point_order.append(cand)
+                        placed.add(cand)
+        # 末尾剩余
+        for l1 in sorted(l1_groups.keys(), key=lambda x: l1_order_map.get(x, 0)):
+            for cand, _ in l1_groups[l1]:
+                if cand not in placed:
+                    final_point_order.append(cand)
+                    placed.add(cand)
+
+    print(f"[INFO] 第{round_num}轮: 排列方案={order_mode}, 最终点位顺序: {' → '.join(final_point_order)}")
+
+    # --- 6c: 按final_point_order合并原记录和补充占位 ---
     merged_records = []
 
-    # 第一阶段: 按原数据时间顺序遍历,每条原记录后紧跟补充
-    for orig in sorted_records:
-        pt_clean = ''.join(orig.get("point", "").split())
-        merged_records.append(orig)
-        # 在原记录后插入该点位的补充(如果有)
-        point_supplements = [s for s in supplement_placeholders if s["point"] == pt_clean]
-        # 只插入一条补充(如果该点位有多条补充,后面继续处理)
-        for supp in point_supplements:
-            if supp not in merged_records:
-                merged_records.append(supp)
-                break
+    for pt_name in final_point_order:
+        # 先加入该点位的原记录(按时间顺序)
+        pt_origs = [r for r in sorted_records if ''.join(r.get("point", "").split()) == pt_name]
+        for orig in pt_origs:
+            merged_records.append(orig)
+        # 再加入该点位的补充记录
+        pt_supps = [s for s in supplement_placeholders if s["point"] == pt_name]
+        merged_records.extend(pt_supps)
 
-    # 第一阶段补充: 如果某点位有多条补充记录(如 count=0 需2条),继续追加
-    for pt_name in seen_in_data:
-        pt_clean = ''.join(pt_name.split())
-        point_supplements = [s for s in supplement_placeholders if s["point"] == pt_clean]
-        already_merged = [s for s in merged_records if s.get("point") == pt_clean and s.get("source") == "supplemented"]
-        remaining = [s for s in point_supplements if s not in merged_records]
-        merged_records.extend(remaining)
+    print(f"[DEBUG] 第{round_num}轮: 合并后共{len(merged_records)}条记录 (原{len(sorted_records)}+补充{len(supplement_placeholders)})")
 
-    # 第二阶段: 无原数据的点位,按标签顺序追加补充记录
-    no_data_points = []
-    for point_name, _ in fill_order:
-        if point_name not in seen_in_data:
-            no_data_points.append(point_name)
-    for pt_name in no_data_points:
-        point_supplements = [s for s in supplement_placeholders if s["point"] == pt_name]
-        merged_records.extend(point_supplements)
+    # --- 6d: 统一分配时间 ---
+    # 核心规则:
+    #   - 原数据保持原始时间不变
+    #   - 补充记录的时间 = 前一条记录时间 + 间隔
+    #   - 间隔: 同点位10~40秒, 异点位20~70秒
+    #   - 需确保补充记录时间不与原数据时间冲突(不能挤掉原数据的位置)
+    #   - 最终sort后顺序 = final_point_order的顺序
 
-    print(f"[DEBUG] 第{round_num}轮：合并后共{len(merged_records)}条记录 (原{len(sorted_records)}+补充{len(supplement_placeholders)})")
-
-    # === 阶段 3: 按顺序遍历合并列表,为补充记录分配时间 ===
-    # [FIX 2026-06-23] 检查原数据时间跨度
-    original_times = [datetime.datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S")
-                      for r in sorted_records if r.get("time")]
-    if len(original_times) >= 2:
-        original_span = (max(original_times) - min(original_times)).total_seconds()
-        if original_span > 2700:  # 45 分钟 = 2700 秒
-            print(f"[WARN] 第{round_num}轮：原数据时间跨度{original_span/60:.1f}分钟，超过 45 分钟限制")
-            print(f"[WARN] 建议：原数据时间过于分散，补充后总时间可能仍超过 45 分钟")
-
-    allowed_gap_configs = [
-        {'same': (10, 30), 'diff': (30, 55)},
-        {'same': (8, 30), 'diff': (30, 70)},
-        {'same': (5, 20), 'diff': (20, 50)},
-        {'same': (3, 10), 'diff': (10, 30)},
-        {'same': (2, 8), 'diff': (8, 20)},
-        {'same': (1, 5), 'diff': (5, 15)},
-    ]
-
-    # 最终结果列表
-    result_records = []
-
-    # [TEMP FIX 2026-06-23] 获取原数据第一条时间，用于向前推算补充数据
+    # 获取原数据时间范围
     original_first_time = None
     original_last_time = None
     for r in sorted_records:
@@ -1331,115 +1344,36 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
                 original_first_time = t
             if original_last_time is None or t > original_last_time:
                 original_last_time = t
-    
-    # 计算补充数据总条数，估算总时长
-    supplement_count = len([r for r in merged_records if r.get("time") is None])
-    # 估算：平均间隔 40 秒，总时长 = (count-1) * 40 秒
-    estimated_supplement_duration = (supplement_count - 1) * 40 if supplement_count > 1 else 0
 
-    # [TEMP FIX 2026-06-23] 计算补充数据的起始时间：在 round_start 到原数据第一条时间之间随机
-    # 修复：起始时间太集中（都在原数据第一条 -12 分钟），需要增加离散性
-    if original_first_time:
-        # 可用时间窗口：round_start 到 original_first_time
-        available_window = (original_first_time - round_start).total_seconds()
-        # 估算补充数据需要的最小时间（按最大间隔 55 秒计算）
-        min_supplement_duration = (supplement_count - 1) * 20 if supplement_count > 1 else 0  # 最小间隔 20 秒
-        max_supplement_duration = (supplement_count - 1) * 70 if supplement_count > 1 else 0  # 最大间隔 70 秒
-        
-        # 随机选择起始时间：确保补充数据能在原数据第一条之前完成
-        # 策略：在 [round_start, original_first_time - min_supplement_duration] 范围内随机
-        latest_start = original_first_time - datetime.timedelta(seconds=min_supplement_duration)
-        if latest_start < round_start:
-            latest_start = round_start
-        
-        # 随机起始时间（增加离散性）
-        random_range = (latest_start - round_start).total_seconds()
-        if random_range > 0:
-            random_offset = random.uniform(0, random_range)
-            supplement_start_time = round_start + datetime.timedelta(seconds=random_offset)
-        else:
-            supplement_start_time = round_start
-        
-        print(f"[INFO] 第{round_num}轮：原数据第一条{original_first_time.strftime('%H:%M:%S')}, " +
-              f"补充{supplement_count}条，随机起始时间{supplement_start_time.strftime('%H:%M:%S')} " +
-              f"(窗口：{round_start.strftime('%H:%M:%S')} - {latest_start.strftime('%H:%M:%S')})")
-    else:
-        # 整轮缺失：起始时间 = round_start + 5~25 分钟随机（增加离散性）
-        random_offset_minutes = random.uniform(5, 25) * 60  # 转为秒
-        supplement_start_time = round_start + datetime.timedelta(seconds=random_offset_minutes)
-        print(f"[INFO] 第{round_num}轮：整轮缺失，随机起始时间{supplement_start_time.strftime('%H:%M:%S')} (偏移{random_offset_minutes/60:.1f}分钟)")
+    # 检查原数据时间跨度
+    if len(sorted_records) >= 2 and original_first_time and original_last_time:
+        original_span = (original_last_time - original_first_time).total_seconds()
+        if original_span > 2700:
+            print(f"[WARN] 第{round_num}轮: 原数据时间跨度{original_span/60:.1f}分钟, 超过45分钟限制")
 
-    # 补充数据的时间游标（独立于原数据）
-    supplement_time_cursor = supplement_start_time
-    last_supplement_point = None
+    # 时间分配
+    result_records = []
+    time_cursor = round_start + datetime.timedelta(seconds=random.randint(30, 120))
+    last_point = None
 
-
-    # 前一条有真实时间记录(原数据)的时间基准
-    last_time_base = None
-    last_point_clean = None  # 上一条有真实时间记录的点位(去空格后)
-
-    # 遍历合并列表，为每个补充记录分配时间
-    # [FIX 2026-06-23] 优先匹配同点位原数据时间，确保同点位两条记录相邻
-    
-    # 构建原数据点位→时间列表的映射
-    original_point_times = {}
-    for r in sorted_records:
-        if r.get("time"):
-            pt = ''.join(r.get("point", "").split())
-            if pt not in original_point_times:
-                original_point_times[pt] = []
-            original_point_times[pt].append(datetime.datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S"))
-    
-    # 排序每个点位的时间列表（确保按时间顺序）
-    for pt in original_point_times:
-        original_point_times[pt].sort()
-    
-    # 跟踪每个点位已使用的原数据时间索引
-    point_time_index = {pt: 0 for pt in original_point_times}
-    
     for rec in merged_records:
-        if rec["time"] is not None:
-            # 原数据记录：保持原时间不变
+        if rec.get("time") is not None and rec.get("source") != "supplemented":
+            # 原数据记录: 保持原时间不变
             result_records.append(rec)
-            last_time_base = datetime.datetime.strptime(rec["time"], "%Y-%m-%d %H:%M:%S")
-            last_point_clean = ''.join(rec.get("point", "").split())
+            time_cursor = datetime.datetime.strptime(rec["time"], "%Y-%m-%d %H:%M:%S")
+            last_point = ''.join(rec.get("point", "").split())
         else:
-            # 补充记录：[FIX] 优先匹配同点位原数据时间
-            current_point_clean = rec["point"]
-            
-            # 检查同点位是否有原数据时间
-            if current_point_clean in original_point_times and point_time_index.get(current_point_clean, 0) < len(original_point_times[current_point_clean]):
-                # 同点位有原数据：补充时间 = 原时间 + 随机间隔 (10-40 秒)
-                orig_times = original_point_times[current_point_clean]
-                idx = point_time_index[current_point_clean]
-                base_time = orig_times[idx]
-                gap = random.randint(10, 40)  # 同点位间隔 10-40 秒
-                assigned_time = base_time + datetime.timedelta(seconds=gap)
-                point_time_index[current_point_clean] = idx + 1
-                print(f"[INFO] 补充'{current_point_clean}': 基于原数据{base_time.strftime('%H:%M:%S')} + {gap}秒 = {assigned_time.strftime('%H:%M:%S')}")
-            else:
-                # 同点位无原数据：基于补充数据时间游标
-                is_same_point = (last_supplement_point == current_point_clean) if last_supplement_point else False
-                min_gap, max_gap = (10, 40) if is_same_point else (20, 70)
-                gap = random.randint(min_gap, max_gap)
-                assigned_time = supplement_time_cursor + datetime.timedelta(seconds=gap)
-                
-                # [FIX] 只有当 supplement_time_cursor < original_first_time 时才压缩
-                # 避免 supplement_time_cursor 已超过 original_first_time 时 gap=1 的问题
-                if original_first_time and supplement_time_cursor < original_first_time and assigned_time > original_first_time:
-                    # 压缩间隔，确保在原数据之前
-                    gap = max(10, int((original_first_time - supplement_time_cursor).total_seconds() // 2))
-                    assigned_time = supplement_time_cursor + datetime.timedelta(seconds=gap)
-                supplement_time_cursor = assigned_time
-                last_supplement_point = current_point_clean
-            
+            # 补充记录: 基于time_cursor + 间隔分配时间
+            current_point = rec["point"]
+            is_same = (last_point == current_point) if last_point else False
+            min_gap, max_gap = (10, 40) if is_same else (20, 70)
+            gap = random.randint(min_gap, max_gap)
+            assigned_time = time_cursor + datetime.timedelta(seconds=gap)
             rec["time"] = assigned_time.strftime("%Y-%m-%d %H:%M:%S")
             result_records.append(rec)
-            
-            # 更新时间基准
-            if last_time_base is None:
-                last_time_base = assigned_time
-                last_point_clean = current_point_clean
+            time_cursor = assigned_time
+            last_point = current_point
+            print(f"[INFO] 补充'{current_point}': +{gap}秒 = {assigned_time.strftime('%H:%M:%S')}")
 
     # 规范化所有记录的点位名称(去空格)
     for r in result_records:
@@ -1447,10 +1381,9 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
             r["point"] = ''.join(r["point"].split())
 
     # [FIX 2026-07-12] 按时间正序排列最终结果
-    # 补充记录的时间可能早于原数据(如无原数据的补充插入在 round_start~original_first_time 之间)
     result_records.sort(key=lambda r: r.get("time", ""))
 
-    print(f"[DEBUG] 第{round_num}轮：最终结果{len(result_records)}条记录")
+    print(f"[DEBUG] 第{round_num}轮: 最终结果{len(result_records)}条记录")
 
     return result_records
 
