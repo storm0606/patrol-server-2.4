@@ -752,7 +752,6 @@ def get_route_detail(route_name):
 # === 全局常量 ===
 # LOW-005: 魔法数字 - 时间间隔常量 (单位：秒)
 TAPS_PER_POINT = 2  # 每个点位标准打点次数:2 次
-SUPPLEMENT_ORDER_MODE = 1  # 补充记录排列方案: 1=L2+1紧随已有, 2=L2-1在前L2+1在后
 
 # === 时间间隔常量 ===
 SAME_POINT_GAP_MIN = 10  # 同点位间隔最小值 (秒)
@@ -913,7 +912,7 @@ def review_round_data_std(round_records, round_num, points, date_str, route_name
         elif cnt == 1:
             missing.append((p_clean, 1))
     if missing:
-        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device, order_mode=SUPPLEMENT_ORDER_MODE)
+        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device)
     return round_records
 
 def review_round_data_std_plus_1(round_records, round_num, points, date_str, route_name="线路一", default_device=""):
@@ -932,7 +931,7 @@ def review_round_data_std_plus_1(round_records, round_num, points, date_str, rou
         elif cnt == 1:
             missing.append((p_clean, 1))
     if missing:
-        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device, order_mode=SUPPLEMENT_ORDER_MODE)
+        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device)
         point_counts = {}
         for r in round_records:
             p = r["point"].strip()
@@ -981,7 +980,7 @@ def review_round_data_std_plus_2(round_records, round_num, points, date_str, rou
         elif cnt == 1:
             missing.append((p_clean, 1))
     if missing:
-        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device, order_mode=SUPPLEMENT_ORDER_MODE)
+        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device)
         point_counts = {}
         for r in round_records:
             p = r["point"].strip()
@@ -1051,10 +1050,10 @@ def supplement_round_direct(round_records, round_num, points, date_str, route_na
         elif cnt == 1:
             missing.append((p_clean, 1))
     if missing:
-        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device, order_mode=SUPPLEMENT_ORDER_MODE)
+        round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device)
     return round_records
 
-def supplement_round_logic(round_records, round_num, points, date_str, missing, route_name="线路一", default_device="", order_mode=1):
+def supplement_round_logic(round_records, round_num, points, date_str, missing, route_name="线路一", default_device=""):
     """
     补充算法核心逻辑 - 标签层级优先 (L1→L2 循环填充)
 
@@ -1188,9 +1187,9 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
     # ================================================================
     # [FIX 2026-07-13] 重构合并与时间分配逻辑
     # 核心改动: 先按排列规则确定所有记录的最终顺序, 再统一分配时间
-    # 支持两种排列方案:
-    #   方案1(SUPPLEMENT_ORDER_MODE=1): 已有点位锚定, L2+1紧随其后, 其余缺失按L2序号
-    #   方案2(SUPPLEMENT_ORDER_MODE=2): 已有点位锚定, L2-1在前L2+1在后, 其余缺失按L2序号
+    # 两种排列方案由B5与前一条记录的时间缝隙自动选择:
+    #   方案1(缝隙不够): 已有点位锚定, L2+1紧随其后, 其余缺失按L2序号
+    #   方案2(缝隙够大): 已有点位锚定, L2-1在前L2+1在后, 补充塞入缝隙
     # ================================================================
 
     # --- 6a: 创建补充占位记录 ---
@@ -1244,11 +1243,36 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
         l1 = labels['label_l1']
         l1_order_map[l1] = labels['label_l1_order']
 
+    # --- 自动选择排列方案 ---
+    # B5 = seen_in_data[0] (同L1下按原数据出现顺序的第一个已有L2点位)
+    # 前一条 = 按时间排序在B5之前的最近一条记录
+    # 缝隙够大(≥SUPPLEMENT_GAP_THRESHOLD秒) → 方案2(L2-1补在B5前,塞入缝隙)
+    # 缝隙不够 → 方案1(B5原数据保持最前, 补充排后面)
+    SUPPLEMENT_GAP_THRESHOLD = 60  # 秒, B5与前一条记录的时间缝隙阈值
+    chosen_mode = 1  # 默认方案1
+
+    if seen_in_data and sorted_records:
+        first_seen_point = seen_in_data[0]
+        # 找B5的原记录时间
+        first_seen_records = [r for r in sorted_records if ''.join(r.get("point", "").split()) == first_seen_point]
+        if first_seen_records:
+            first_seen_time = datetime.datetime.strptime(first_seen_records[0]["time"], "%Y-%m-%d %H:%M:%S")
+            # 找按时间排在B5之前的那条记录
+            prev_records = [r for r in sorted_records if datetime.datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S") < first_seen_time]
+            if prev_records:
+                prev_time = datetime.datetime.strptime(prev_records[-1]["time"], "%Y-%m-%d %H:%M:%S")
+                gap_seconds = (first_seen_time - prev_time).total_seconds()
+                if gap_seconds >= SUPPLEMENT_GAP_THRESHOLD:
+                    chosen_mode = 2
+                print(f"[INFO] 第{round_num}轮: B5='{first_seen_point}' @ {first_seen_time.strftime('%H:%M:%S')}, 前一条 @ {prev_time.strftime('%H:%M:%S')}, 缝隙={gap_seconds:.0f}秒, 选择方案{chosen_mode}")
+            else:
+                print(f"[INFO] 第{round_num}轮: B5='{first_seen_point}'是第一条记录, 无前一条, 选择方案{chosen_mode}")
+
     # 构建最终点位排列顺序
     final_point_order = []
     placed = set()
 
-    if order_mode == 1:
+    if chosen_mode == 1:
         # === 方案1: 按原数据出现顺序遍历已有, L2+1紧随, 间隙填L2<=下一已有的缺失 ===
         for idx, p in enumerate(seen_in_data):
             l2o = seen_l2_orders.get(p, 0)
@@ -1275,7 +1299,7 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
                     final_point_order.append(cand)
                     placed.add(cand)
 
-    elif order_mode == 2:
+    elif chosen_mode == 2:
         # === 方案2: 按原数据出现顺序遍历, L2-1在前L2+1在后, 间隙填L2<=下一已有的缺失 ===
         for idx, p in enumerate(seen_in_data):
             l2o = seen_l2_orders.get(p, 0)
@@ -1310,7 +1334,7 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
                     final_point_order.append(cand)
                     placed.add(cand)
 
-    print(f"[INFO] 第{round_num}轮: 排列方案={order_mode}, 最终点位顺序: {' → '.join(final_point_order)}")
+    print(f"[INFO] 第{round_num}轮: 排列方案={chosen_mode}, 最终点位顺序: {' → '.join(final_point_order)}")
 
     # --- 6c: 按final_point_order合并原记录和补充占位 ---
     merged_records = []
