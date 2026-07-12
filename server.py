@@ -446,6 +446,19 @@ def init_db():
     try:
         db.execute("ALTER TABLE patrol_points ADD COLUMN tag_full TEXT")
     except: pass
+    # 马尔可夫转移概率表 (从已创建动线学习点位排列模式)
+    table_exists = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='patrol_transitions'").fetchone()
+    if not table_exists:
+        db.execute("""
+            CREATE TABLE patrol_transitions (
+                from_point TEXT NOT NULL,
+                to_point TEXT NOT NULL,
+                probability REAL NOT NULL,
+                PRIMARY KEY (from_point, to_point)
+            )
+        """)
+        print("[INIT] 创建 patrol_transitions 表")
+
     # 初始化 schema 版本
     try:
         db.execute("INSERT OR IGNORE INTO schema_version (version, description) VALUES (25, 'v2.4 - 移除 MAC 地址鉴权，仅保留设备指纹鉴权')")
@@ -453,6 +466,9 @@ def init_db():
 
     db.commit()
     db.close()
+
+    # 启动时学习一次转移矩阵
+    learn_transitions()
 
 def db_get_points():
     """
@@ -1053,6 +1069,125 @@ def supplement_round_direct(round_records, round_num, points, date_str, route_na
         round_records = supplement_round_logic(round_records, round_num, points, date_str, missing, route_name=route_name, default_device=default_device)
     return round_records
 
+def learn_transitions():
+    """从所有已创建动线学习点位转移概率, 写入 patrol_transitions 表"""
+    all_routes = get_all_routes()
+    if not all_routes:
+        print("[INFO] learn_transitions: 无已创建路线, 跳过学习")
+        return
+
+    # 统计转移频次: {(from, to): count}
+    transition_counts = {}
+    for route in all_routes:
+        route_points = get_route_points(route["name"])
+        if len(route_points) < 2:
+            continue
+        for i in range(len(route_points) - 1):
+            key = (route_points[i], route_points[i + 1])
+            transition_counts[key] = transition_counts.get(key, 0) + 1
+
+    if not transition_counts:
+        print("[INFO] learn_transitions: 无有效转移, 跳过")
+        return
+
+    # 计算概率: 每个 from_point 的所有转移概率之和为 1
+    from_totals = {}
+    for (f, t), cnt in transition_counts.items():
+        from_totals[f] = from_totals.get(f, 0) + cnt
+
+    # 写入数据库
+    db = get_db()
+    try:
+        db.execute("DELETE FROM patrol_transitions")
+        for (f, t), cnt in transition_counts.items():
+            prob = cnt / from_totals[f]
+            db.execute("INSERT INTO patrol_transitions (from_point, to_point, probability) VALUES (?, ?, ?)",
+                       (f, t, round(prob, 4)))
+        db.commit()
+        print(f"[INFO] learn_transitions: 学到 {len(transition_counts)} 条转移, 来自 {len(from_totals)} 个起点")
+    except Exception as e:
+        print(f"[ERROR] learn_transitions: {e}")
+    finally:
+        db.close()
+
+
+def generate_markov_sequence(missing_points, seen_in_data):
+    """用马尔可夫转移概率生成合理的点位补充顺序
+
+    从该轮已有原数据的最后一个点位出发, 按转移概率随机游走,
+    走完所有缺失点位。转移概率来自 patrol_transitions 表。
+    无法转移时随机选一个未访问的缺失点位。
+
+    Args:
+        missing_points: 需要补充的点位列表 (去重)
+        seen_in_data: 原数据中出现的点位列表 (保序)
+    Returns:
+        补充点位的排列顺序列表
+    """
+    import random as _rnd
+
+    if not missing_points:
+        return []
+
+    # 从DB加载转移概率
+    transitions = {}  # {from: [(to, prob), ...]}
+    db = get_db()
+    try:
+        rows = db.execute("SELECT from_point, to_point, probability FROM patrol_transitions").fetchall()
+        for r in rows:
+            f, t, p = r[0], r[1], r[2]
+            if f not in transitions:
+                transitions[f] = []
+            transitions[f].append((t, p))
+    except Exception as e:
+        print(f"[WARN] generate_markov_sequence: 读转移概率失败: {e}")
+    finally:
+        db.close()
+
+    if not transitions:
+        # 无学习数据, 退回原数据顺序
+        result = [p for p in missing_points if p not in seen_in_data]
+        result = list(dict.fromkeys(result))  # 去重保序
+        return result
+
+    # 从原数据最后一个点位出发
+    current = seen_in_data[-1] if seen_in_data else None
+    remaining = set(missing_points)
+    result = []
+
+    max_steps = len(missing_points) * 3  # 防止死循环
+    steps = 0
+    while remaining and steps < max_steps:
+        steps += 1
+        # 尝试按转移概率走
+        if current in transitions:
+            candidates = [(t, p) for t, p in transitions[current] if t in remaining]
+            if candidates:
+                # 加权随机选择
+                total_p = sum(p for _, p in candidates)
+                r = _rnd.random() * total_p
+                cumulative = 0
+                chosen = candidates[0][0]
+                for t, p in candidates:
+                    cumulative += p
+                    if r <= cumulative:
+                        chosen = t
+                        break
+                result.append(chosen)
+                remaining.remove(chosen)
+                current = chosen
+                continue
+
+        # 无法转移 → 随机选一个未访问的缺失点位
+        if remaining:
+            chosen = _rnd.choice(list(remaining))
+            result.append(chosen)
+            remaining.remove(chosen)
+            current = chosen
+
+    return result
+
+
 def supplement_round_logic(round_records, round_num, points, date_str, missing, route_name="线路一", default_device=""):
     """
     补充算法核心逻辑 - 标签层级优先 (L1→L2 循环填充)
@@ -1187,39 +1322,61 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
         print(f"[DEBUG] 第{round_num}轮: 整轮全缺失补充完成, {len(result_records)}条记录")
         return result_records
 
-    # ========== 部分缺失: 按标签层级补充 ==========
-    # === 步骤 5: [FIX 2026-07-12] 按标签层级顺序构建补充列表 ===
-    # 规则:
-    #   1. 先补充已有但不足2条的点位(按原数据出现顺序)
-    #   2. 再补充同L1下完全缺失的点位(按 L2 序号排序)
+    # ========== 部分缺失: 马尔可夫转移概率生成补充顺序 ==========
+    # === 步骤 5: 用马尔可夫链生成补充点位顺序 ===
+    # 第一阶段: 已有但不足的点位(保持原数据出现顺序)
+    # 第二阶段: 完全缺失的点位(由马尔可夫序列决定顺序)
+
+    # --- 旧逻辑(按标签层级): 注释保留 ---
+    # fill_order = []  # [(point_name, tap_count), ...]
+    # # 第一阶段: 已有但不足的点位,按原数据出现顺序
+    # for p in seen_in_data:
+    #     count = point_counts.get(p, 0)
+    #     if count < TAPS_PER_POINT:
+    #         need = TAPS_PER_POINT - count
+    #         fill_order.append((p, need))
+    # # 第二阶段: 同L1下完全缺失的点位,按 L1→L2 标签顺序
+    # l1_with_data = set()
+    # for p in seen_in_data:
+    #     if p in point_labels:
+    #         l1_with_data.add(point_labels[p]['label_l1'])
+    # missing_no_data = []
+    # for l1 in l1_with_data:
+    #     for p, labels in point_labels.items():
+    #         if labels['label_l1'] == l1 and point_counts.get(p, 0) == 0:
+    #             missing_no_data.append((p, l1, labels['label_l1_order'], labels['label_l2_order']))
+    # missing_no_data.sort(key=lambda x: (x[1], x[2], x[3]))
+    # for mp in missing_no_data:
+    #     fill_order.append((mp[0], TAPS_PER_POINT))
+    # --- 旧逻辑结束 ---
+
+    # --- 新逻辑: 马尔可夫转移概率生成补充顺序 ---
     fill_order = []  # [(point_name, tap_count), ...]
 
-    # === 第一阶段: 已有但不足的点位,按原数据出现顺序 ===
+    # 第一阶段: 已有但不足的点位,按原数据出现顺序(不变)
     for p in seen_in_data:
         count = point_counts.get(p, 0)
         if count < TAPS_PER_POINT:
             need = TAPS_PER_POINT - count
             fill_order.append((p, need))
 
-    # === 第二阶段: 同L1下完全缺失的点位,按 L1→L2 标签顺序 ===
-    # 收集已有数据的 L1 标签
-    l1_with_data = set()
-    for p in seen_in_data:
-        if p in point_labels:
-            l1_with_data.add(point_labels[p]['label_l1'])
-    
-    # 收集这些 L1 下所有 L2 点位,排除已有数据的
-    missing_no_data = []  # [(point_name, label_l1, label_l1_order, label_l2_order), ...]
-    for l1 in l1_with_data:
-        for p, labels in point_labels.items():
-            if labels['label_l1'] == l1 and point_counts.get(p, 0) == 0:
-                missing_no_data.append((p, l1, labels['label_l1_order'], labels['label_l2_order']))
-    
-    # 按 L1 文本→L1 序号→L2 序号排序
-    missing_no_data.sort(key=lambda x: (x[1], x[2], x[3]))
-    
-    for mp in missing_no_data:
-        fill_order.append((mp[0], TAPS_PER_POINT))
+    # 第二阶段: 完全缺失的点位,由马尔可夫序列决定顺序
+    missing_no_data_points = []
+    for p in points:
+        p_clean = ''.join(p.split())
+        if p_clean not in point_counts or point_counts.get(p_clean, 0) == 0:
+            if p_clean not in [item[0] for item in fill_order]:
+                missing_no_data_points.append(p_clean)
+    # 去重保序
+    missing_no_data_points = list(dict.fromkeys(missing_no_data_points))
+
+    # 用马尔可夫链生成补充顺序
+    markov_order = generate_markov_sequence(missing_no_data_points, seen_in_data)
+    print(f"[INFO] 第{round_num}轮: 马尔可夫生成补充顺序: {' → '.join(markov_order)}")
+
+    for p in markov_order:
+        fill_order.append((p, TAPS_PER_POINT))
+    # --- 新逻辑结束 ---
 
 
     # === 步骤 6: [FIX 2026-07-13] 按最终排列顺序统一分配时间 ===
@@ -1284,105 +1441,94 @@ def supplement_round_logic(round_records, round_num, points, date_str, missing, 
             })
         print(f"[INFO] supplement_round_logic: 将补充点位 '{point_name}' 共{tap_count}条")
 
-    # --- 6b: 按L1分组构建最终点位顺序 ---
-    # 核心规则: 同L1下的补充点位必须相邻, 不被其他L1打断
+    # --- 6b: 构建最终点位顺序 ---
 
-    # 收集同L1下所有L2点位, 按L2序号排序
-    l1_groups = {}  # {l1_label: [(point_name, l2_order), ...]}
-    for p, labels in point_labels.items():
-        l1 = labels['label_l1']
-        if l1 not in l1_groups:
-            l1_groups[l1] = []
-        l1_groups[l1].append((p, labels['label_l2_order']))
-    for l1 in l1_groups:
-        l1_groups[l1].sort(key=lambda x: x[1])
+    # --- 旧逻辑(L1分组+缝隙检测): 注释保留 ---
+    # # 核心规则: 同L1下的补充点位必须相邻, 不被其他L1打断
+    # l1_groups = {}
+    # for p, labels in point_labels.items():
+    #     l1 = labels['label_l1']
+    #     if l1 not in l1_groups:
+    #         l1_groups[l1] = []
+    #     l1_groups[l1].append((p, labels['label_l2_order']))
+    # for l1 in l1_groups:
+    #     l1_groups[l1].sort(key=lambda x: x[1])
+    # seen_l1_order = []
+    # for p in seen_in_data:
+    #     if p in point_labels:
+    #         l1 = point_labels[p]['label_l1']
+    #         if l1 not in seen_l1_order:
+    #             seen_l1_order.append(l1)
+    # l1_order_map = {}
+    # for p, labels in point_labels.items():
+    #     l1 = labels['label_l1']
+    #     l1_order_map[l1] = labels['label_l1_order']
+    # SUPPLEMENT_GAP_THRESHOLD = 60
+    # l1_insert_before = {}
+    # if seen_in_data and sorted_records:
+    #     time_sorted = sorted(sorted_records, key=lambda r: r["time"])
+    #     for l1 in seen_l1_order:
+    #         l1_first_point = None
+    #         for p in seen_in_data:
+    #             if p in point_labels and point_labels[p]['label_l1'] == l1:
+    #                 l1_first_point = p
+    #                 break
+    #         if not l1_first_point:
+    #             l1_insert_before[l1] = False
+    #             continue
+    #         l1_first_records = [r for r in time_sorted if ''.join(r.get("point", "").split()) == l1_first_point]
+    #         if not l1_first_records:
+    #             l1_insert_before[l1] = False
+    #             continue
+    #         l1_first_time = datetime.datetime.strptime(l1_first_records[0]["time"], "%Y-%m-%d %H:%M:%S")
+    #         prev_records = [r for r in time_sorted if datetime.datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S") < l1_first_time]
+    #         if prev_records:
+    #             prev_time = datetime.datetime.strptime(prev_records[-1]["time"], "%Y-%m-%d %H:%M:%S")
+    #             gap_seconds = (l1_first_time - prev_time).total_seconds()
+    #             l1_insert_before[l1] = gap_seconds >= SUPPLEMENT_GAP_THRESHOLD
+    #         else:
+    #             l1_insert_before[l1] = False
+    # supplement_groups = []
+    # for l1 in seen_l1_order:
+    #     group_points = []
+    #     for p, l2o in l1_groups.get(l1, []):
+    #         if supplement_needed.get(p, 0) > 0:
+    #             group_points.append(p)
+    #     if group_points:
+    #         supplement_groups.append((l1, group_points))
+    # final_point_order = []
+    # inserted_l1_groups = set()
+    # for p in seen_in_data:
+    #     if p in point_labels:
+    #         l1 = point_labels[p]['label_l1']
+    #         if l1 not in inserted_l1_groups and l1_insert_before.get(l1, False):
+    #             for sg_l1, sg_pts in supplement_groups:
+    #                 if sg_l1 == l1:
+    #                     for sp in sg_pts:
+    #                         final_point_order.append((sp, 'supplement'))
+    #                     break
+    #             inserted_l1_groups.add(l1)
+    #     final_point_order.append((p, 'original'))
+    # for sg_l1, sg_pts in supplement_groups:
+    #     if sg_l1 not in inserted_l1_groups:
+    #         for sp in sg_pts:
+    #             final_point_order.append((sp, 'supplement'))
+    # --- 旧逻辑结束 ---
 
-    # 原数据中L1的出现顺序(去重)
-    seen_l1_order = []
-    for p in seen_in_data:
-        if p in point_labels:
-            l1 = point_labels[p]['label_l1']
-            if l1 not in seen_l1_order:
-                seen_l1_order.append(l1)
-
-    # L1序号映射(用于排序)
-    l1_order_map = {}
-    for p, labels in point_labels.items():
-        l1 = labels['label_l1']
-        l1_order_map[l1] = labels['label_l1_order']
-
-    # 判断每个L1组的第一条原数据与前一条记录的时间缝隙
-    # 缝隙≥60秒 → 该L1组的补充插入该原数据前(塞入缝隙)
-    SUPPLEMENT_GAP_THRESHOLD = 60  # 秒
-    l1_insert_before = {}  # {l1_label: True/False}
-
-    if seen_in_data and sorted_records:
-        # 按时间排序的记录列表
-        time_sorted = sorted(sorted_records, key=lambda r: r["time"])
-        for l1 in seen_l1_order:
-            # 找该L1组在seen_in_data中的第一条点位
-            l1_first_point = None
-            for p in seen_in_data:
-                if p in point_labels and point_labels[p]['label_l1'] == l1:
-                    l1_first_point = p
-                    break
-            if not l1_first_point:
-                l1_insert_before[l1] = False
-                continue
-            # 找该点位的原记录时间(取最早的一条)
-            l1_first_records = [r for r in time_sorted if ''.join(r.get("point", "").split()) == l1_first_point]
-            if not l1_first_records:
-                l1_insert_before[l1] = False
-                continue
-            l1_first_time = datetime.datetime.strptime(l1_first_records[0]["time"], "%Y-%m-%d %H:%M:%S")
-            # 找时间上紧排在它前面的那条记录
-            prev_records = [r for r in time_sorted if datetime.datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S") < l1_first_time]
-            if prev_records:
-                prev_time = datetime.datetime.strptime(prev_records[-1]["time"], "%Y-%m-%d %H:%M:%S")
-                gap_seconds = (l1_first_time - prev_time).total_seconds()
-                l1_insert_before[l1] = gap_seconds >= SUPPLEMENT_GAP_THRESHOLD
-                print(f"[INFO] 第{round_num}轮: L1='{l1}' 首条='{l1_first_point}' @ {l1_first_time.strftime('%H:%M:%S')}, 前一条 @ {prev_time.strftime('%H:%M:%S')}, 缝隙={gap_seconds:.0f}秒, 插入前={l1_insert_before[l1]}")
-            else:
-                l1_insert_before[l1] = False
-                print(f"[INFO] 第{round_num}轮: L1='{l1}' 首条='{l1_first_point}' 是最早记录, 无前一条")
-
-    # 构建补充点位分组: 按L1分组, 每组内按L2序号排列
-    # supplement_groups: [(l1_label, [point_name, ...]), ...]
-    supplement_groups = []
-    for l1 in seen_l1_order:
-        group_points = []
-        for p, l2o in l1_groups.get(l1, []):
-            if supplement_needed.get(p, 0) > 0:
-                group_points.append(p)
-        if group_points:
-            supplement_groups.append((l1, group_points))
-
-    # 构建最终点位顺序 (带角色标记, 避免同一点位重复导致记录翻倍)
-    # 核心逻辑: 遍历原数据, 每个L1组的首条原数据前若缝隙够大则插入该组补充
-    # final_point_order: [(point_name, 'original'|'supplement'), ...]
+    # --- 新逻辑: 马尔可夫序列决定补充点位顺序, 原数据保持原顺序, 补充整体排在原数据后 ---
     final_point_order = []
-    inserted_l1_groups = set()  # 已插入补充的L1组
-
+    # 原数据按出现顺序
     for p in seen_in_data:
-        if p in point_labels:
-            l1 = point_labels[p]['label_l1']
-            # 该L1组是否需要在前方插入补充
-            if l1 not in inserted_l1_groups and l1_insert_before.get(l1, False):
-                # 找到该L1的补充分组, 插入到首条原数据前
-                for sg_l1, sg_pts in supplement_groups:
-                    if sg_l1 == l1:
-                        for sp in sg_pts:
-                            final_point_order.append((sp, 'supplement'))
-                        break
-                inserted_l1_groups.add(l1)
-        # 加入原数据
         final_point_order.append((p, 'original'))
-
-    # 剩余未插入的补充L1组, 整体排在原数据后
-    for sg_l1, sg_pts in supplement_groups:
-        if sg_l1 not in inserted_l1_groups:
-            for sp in sg_pts:
-                final_point_order.append((sp, 'supplement'))
+    # 补充按马尔可夫生成的顺序(fill_order已含马尔可夫顺序)
+    supplement_points_ordered = []
+    for point_name, tap_count in fill_order:
+        pn_clean = ''.join(point_name.split())
+        if supplement_needed.get(pn_clean, 0) > 0 and pn_clean not in [x[0] for x in supplement_points_ordered]:
+            supplement_points_ordered.append((pn_clean, 'supplement'))
+    for sp_name, sp_role in supplement_points_ordered:
+        final_point_order.append((sp_name, sp_role))
+    # --- 新逻辑结束 ---
 
     order_desc = ' → '.join(f'{p}[原]' if r == 'original' else f'{p}[补]' for p, r in final_point_order)
     print(f"[INFO] 第{round_num}轮: 最终点位顺序: {order_desc}")
@@ -2249,6 +2395,7 @@ class PatrolHandler(BaseHTTPRequestHandler):
                                (route_id, point_id, idx))
                 db.commit()
                 db.close()
+                learn_transitions()
                 self._send_json({"ok": True, "route_id": route_id})
             except Exception as e:
                 db.close()
@@ -2280,6 +2427,7 @@ class PatrolHandler(BaseHTTPRequestHandler):
                     self._send_json({"error": "路线不存在"}); return
                 db.execute("UPDATE patrol_routes SET name=?, description=? WHERE name=?", (new_name, description, old_name))
                 db.commit()
+                learn_transitions()
                 self._send_json({"ok": True})
             except Exception as e:
                 self._send_json({"error": f"更新失败:{e}"})
@@ -2303,6 +2451,7 @@ class PatrolHandler(BaseHTTPRequestHandler):
                     db.execute("DELETE FROM patrol_routes WHERE id=?", (route_id,))
                     db.commit()
                 db.close()
+                learn_transitions()
                 self._send_json({"ok": True})
             except Exception as e:
                 db.close()
@@ -2331,6 +2480,7 @@ class PatrolHandler(BaseHTTPRequestHandler):
                                (route_id, point_id, idx))
                 db.commit()
                 db.close()
+                learn_transitions()
                 self._send_json({"ok": True})
             except Exception as e:
                 db.close()
