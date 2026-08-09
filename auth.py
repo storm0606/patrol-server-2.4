@@ -116,20 +116,34 @@ def verify_hmac(data, signature, key=None):
 
 # ===== MAC 地址处理 =====
 def _get_interface_macs():
-    """读取 /sys/class/net 获取本机所有网卡MAC"""
+    """获取本机所有网卡MAC（跨平台）"""
     macs = []
-    net_dir = "/sys/class/net"
-    if os.path.isdir(net_dir):
-        for iface in os.listdir(net_dir):
-            addr_file = os.path.join(net_dir, iface, "address")
-            try:
-                with open(addr_file) as f:
-                    addr = f.read().strip().replace(":", "").replace("-", "").lower()
-                if addr and addr != "000000000000" and len(addr) == 12:
-                    macs.append(addr)
-            except Exception:
-                continue
-    return macs
+    system = platform.system()
+    
+    if system == "Linux":
+        # Linux: 读取 /sys/class/net
+        net_dir = "/sys/class/net"
+        if os.path.isdir(net_dir):
+            for iface in os.listdir(net_dir):
+                addr_file = os.path.join(net_dir, iface, "address")
+                try:
+                    with open(addr_file) as f:
+                        addr = f.read().strip().replace(":", "").replace("-", "").lower()
+                    if addr and addr != "000000000000" and len(addr) == 12:
+                        macs.append(addr)
+                except Exception:
+                    continue
+    
+    elif system == "Windows":
+        # Windows: 使用 wmic nic 获取MAC地址
+        output = _run_command("wmic nic where NetEnabled=true get MACAddress")
+        if output:
+            for line in output.split("\n"):
+                line = line.strip().replace(":", "").replace("-", "").lower()
+                if line and "macaddress" not in line and len(line) == 12 and line != "000000000000":
+                    macs.append(line)
+    
+    return sorted(macs)  # 排序确保顺序稳定
 
 
 def _get_uuid_mac():
@@ -222,6 +236,7 @@ def get_cpu_id():
         # Windows: wmic cpu get ProcessorId
         output = _run_command("wmic cpu get ProcessorId")
         if output:
+            valid_ids = []
             lines = output.split("\n")
             for line in lines:
                 line = line.strip()
@@ -230,19 +245,26 @@ def get_cpu_id():
                     # ProcessorId 通常是 8-32 位的 16 进制字符
                     hex_chars = "0123456789ABCDEFabcdef"
                     if len(line) >= 8 and all(c in hex_chars for c in line):
-                        return line
-            # 宽松降级：如果严格的十六进制验证没找到，取第一个非标题、非空行
+                        valid_ids.append(line)
+            if valid_ids:
+                valid_ids.sort()  # 排序确保多CPU时顺序稳定
+                return valid_ids[0]
+            # 宽松降级：如果严格的十六进制验证没找到，取排序后第一个有效行
             # MEDIUM-002 修复：添加数据验证，只允许字母数字和连字符
+            fallback_ids = []
             for line in lines:
                 line = line.strip()
                 if line and "ProcessorId" not in line:
                     # 验证：长度至少 1 字符，只允许字母数字和连字符
                     if len(line) >= 1 and re.match(r'^[a-zA-Z0-9\-]+$', line):
-                        return line
+                        fallback_ids.append(line)
                     else:
-                        # 无效数据，记录警告并返回 unknown_cpu
+                        # 无效数据，记录警告
                         print(f"[WARNING] Invalid Windows CPU ID format: '{line}' (contains invalid characters)")
-                        return "unknown_cpu"
+            if fallback_ids:
+                fallback_ids.sort()  # 排序确保顺序稳定
+                return fallback_ids[0]
+            return "unknown_cpu"
     
     # 降级：使用 CPU 核心数等特征
     import multiprocessing
@@ -329,6 +351,7 @@ def get_disk_serials():
                 if line and "SerialNumber" not in line:
                     serials.append(line)
     
+    serials.sort()  # 排序确保多硬盘顺序稳定
     return serials if serials else ["unknown_disk"]
 
 
@@ -393,21 +416,14 @@ def get_device_fingerprint():
     if board_serial:
         identifiers.append(f"board:{board_serial}")
     
-    # 硬盘序列号（支持多硬盘采集）
-    disk_serials = get_disk_serials()
-    for disk_serial in sorted(disk_serials):
-        if disk_serial:
-            identifiers.append(f"disk:{disk_serial}")
+    # 硬盘序列号已取消，不参与设备指纹计算
     
     # 机器 SID
     machine_sid = get_machine_sid()
     if machine_sid:
         identifiers.append(f"machine:{machine_sid}")
     
-    # MAC 地址（多网卡）
-    macs = get_machine_macs()
-    for mac in sorted(macs):
-        identifiers.append(f"mac:{mac}")
+    # 注意: MAC 地址已取消鉴权，不参与设备指纹计算
     
     # 排序后拼接
     identifiers.sort()
